@@ -48,6 +48,36 @@ export interface Tag {
   transaction_count: number;
 }
 
+// ---------- budgets (F6)
+
+export type BudgetMode = 'manual' | 'fixed' | 'rollover';
+
+export interface Budget {
+  id: number;
+  name: string;
+  active: boolean;
+  mode: BudgetMode;
+  amount: number; // per month (fixed / rollover)
+  month: string;
+  limit: number | null; // this month's amount; null = none set
+  limit_is_auto: boolean;
+  spent: number;
+  left: number | null;
+}
+
+export interface BudgetMonth {
+  month: string;
+  budgets: Budget[];
+  budgeted: number;
+  spent: number;
+  unbudgeted_spent: number;
+}
+
+export interface NamedRef {
+  id: number;
+  name: string;
+}
+
 export interface Txn {
   id: number;
   type: TxnType;
@@ -57,6 +87,7 @@ export interface Txn {
   source: AccountRef;
   destination: AccountRef;
   category: CategoryRef | null;
+  budget: NamedRef | null;
   tags: string[];
   notes: string | null;
 }
@@ -85,4 +116,5 @@ export interface Overview {
   by_category: CategorySpend[];
   recent: Txn[];
   transaction_count: number;
+  budgets: Budget[]; // the month's active budgets with an amount or spending
 }

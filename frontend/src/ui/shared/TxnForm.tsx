@@ -1,6 +1,6 @@
 'use client';
 import { useState, type FormEvent } from 'react';
-import type { Account, Category, Tag, Txn, TxnType } from '../lib/types';
+import type { Account, BudgetMonth, Category, Tag, Txn, TxnType } from '../lib/types';
 import { api } from '../lib/api';
 import { paiseToInput, toPaise, todayIso } from '../lib/format';
 import { useApi, useShell } from '../contexts/ShellCtx';
@@ -20,6 +20,7 @@ export interface TxnDefaults {
   source_name?: string;
   destination_name?: string;
   category_id?: number;
+  budget_id?: number;
   notes?: string;
 }
 
@@ -41,6 +42,7 @@ function initial(txn?: Txn, d: TxnDefaults = {}) {
       sourceName: txn.type === 'deposit' ? txn.source.name : '',
       destName: txn.type === 'withdrawal' ? txn.destination.name : '',
       categoryId: txn.category ? String(txn.category.id) : '',
+      budgetId: txn.budget ? String(txn.budget.id) : '',
       tags: txn.tags.join(', '),
       notes: txn.notes ?? '',
     };
@@ -55,6 +57,7 @@ function initial(txn?: Txn, d: TxnDefaults = {}) {
     sourceName: d.source_name ?? '',
     destName: d.destination_name ?? '',
     categoryId: d.category_id ? String(d.category_id) : '',
+    budgetId: d.budget_id ? String(d.budget_id) : '',
     tags: '',
     notes: d.notes ?? '',
   };
@@ -80,6 +83,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const counterparties = useApi<Account[]>('/accounts?type=expense&type=revenue');
   const categories = useApi<Category[]>('/categories');
   const tags = useApi<Tag[]>('/tags');
+  const budgets = useApi<BudgetMonth>(`/budgets?month=${f.date.slice(0, 7)}`);
 
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
   // Inactive accounts are hidden, except the one this transaction already uses.
@@ -100,6 +104,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
       amount,
       description: f.description,
       category_id: f.type !== 'transfer' && f.categoryId ? Number(f.categoryId) : null,
+      budget_id: f.type === 'withdrawal' && f.budgetId ? Number(f.budgetId) : null,
       tags: f.tags.split(',').map((s) => s.trim()).filter(Boolean),
       notes: f.notes || null,
     };
@@ -216,6 +221,21 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
             <select id="tx-cat" className="inp" value={f.categoryId} onChange={(e) => set('categoryId', e.target.value)}>
               <option value="">Uncategorised</option>
               <CategoryOptions categories={categories.data ?? []} kind={kindFor(f.type)} keep={f.categoryId} />
+            </select>
+          </div>
+        )}
+        {f.type === 'withdrawal' && (
+          <div className="field">
+            <label htmlFor="tx-budget">Budget</label>
+            <select id="tx-budget" className="inp" value={f.budgetId} onChange={(e) => set('budgetId', e.target.value)}>
+              <option value="">No budget</option>
+              {(budgets.data?.budgets ?? [])
+                .filter((b) => b.active || String(b.id) === f.budgetId)
+                .map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
             </select>
           </div>
         )}

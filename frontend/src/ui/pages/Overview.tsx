@@ -15,6 +15,7 @@ import { ErrorState } from '../primitives/ErrorState';
 import { CategoryGlyph, PALETTE } from '../primitives/CategoryGlyph';
 import { Icon } from '../primitives/Icon';
 import { TxnRow } from '../shared/TxnRow';
+import { Progress } from '../shared/Progress';
 
 function Row({ href, glyph, title, sub, right }: { href: string; glyph: ReactNode; title: ReactNode; sub: ReactNode; right: ReactNode }) {
   return (
@@ -193,6 +194,37 @@ export function OverviewPage() {
           )}
         </SectionCard>
       </div>
+
+      {data.budgets.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <SectionCard title="Budgets" action={{ label: 'All budgets', href: '/budgets' }}>
+            {data.budgets.slice(0, 6).map((b) => (
+              <Link
+                key={b.id}
+                href={`/transactions${qs({ budget: b.id, ...inMonth })}`}
+                className="catrow"
+                style={{ display: 'block', textDecoration: 'none' }}
+              >
+                <div className="top">
+                  <span className="nm">{b.name}</span>
+                  <span style={{ fontSize: 13 }}>
+                    <span className="fig">
+                      <Money amount={rs(b.spent)} interactive={false} />
+                    </span>
+                    {b.limit !== null && (
+                      <span className="muted">
+                        {' '}
+                        of <Money amount={rs(b.limit)} interactive={false} />
+                      </span>
+                    )}
+                  </span>
+                </div>
+                {b.limit !== null && <Progress value={b.spent} max={b.limit} />}
+              </Link>
+            ))}
+          </SectionCard>
+        </div>
+      )}
 
       <SectionCard title="Recent activity" action={{ label: 'All transactions', href: '/transactions' }}>
         {data.recent.length === 0 ? (

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..accounts.models import BALANCE_TYPES, Account, AccountType
 from ..accounts.service import find_or_create_counterparty
+from ..budgets.models import Budget
 from ..categories.models import Category, Tag
 from .models import Transaction, TransactionType
 from .schemas import TransactionIn, TransactionOut
@@ -24,6 +25,7 @@ def txn_out(t: Transaction) -> TransactionOut:
         source=t.source,  # type: ignore[arg-type]
         destination=t.destination,  # type: ignore[arg-type]
         category=t.category,  # type: ignore[arg-type]
+        budget=t.budget,  # type: ignore[arg-type]
         tags=sorted(tag.name for tag in t.tags),
         notes=t.notes,
     )
@@ -84,6 +86,13 @@ def apply_body(db: Session, t: Transaction, body: TransactionIn) -> None:
             raise _bad(f"'{cat.name}' is an {cat.kind} category")
         category_id = cat.id
 
+    # Budgets only apply to expenses.
+    budget_id = None
+    if body.type == TransactionType.withdrawal and body.budget_id is not None:
+        if db.get(Budget, body.budget_id) is None:
+            raise _bad("Budget not found")
+        budget_id = body.budget_id
+
     tags: list[Tag] = []
     for raw in sorted({n.strip() for n in body.tags if n.strip()}, key=str.lower):
         tag = db.scalar(select(Tag).where(func.lower(Tag.name) == raw.lower()))
@@ -100,5 +109,6 @@ def apply_body(db: Session, t: Transaction, body: TransactionIn) -> None:
     t.source_id = src.id
     t.destination_id = dst.id
     t.category_id = category_id
+    t.budget_id = budget_id
     t.notes = (body.notes or "").strip() or None
     t.tags = tags

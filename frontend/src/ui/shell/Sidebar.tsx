@@ -15,6 +15,7 @@ const MAIN: NavItem[] = [
   { href: '/', label: 'Overview', icon: 'layout-dashboard' },
   { href: '/transactions', label: 'Transactions', icon: 'arrow-left-right' },
   { href: '/accounts', label: 'Accounts', icon: 'landmark' },
+  { href: '/budgets', label: 'Budgets', icon: 'gauge' },
 ];
 
 const TOOLS: NavItem[] = [

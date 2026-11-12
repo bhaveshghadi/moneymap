@@ -22,6 +22,8 @@ def _filtered(
     account_id: int | None,
     category_id: int | None,
     uncategorised: bool,
+    budget_id: int | None,
+    no_budget: bool,
     tag: str | None,
     date_from: date | None,
     date_to: date | None,
@@ -35,6 +37,10 @@ def _filtered(
         q = q.where(Transaction.category_id.is_(None), Transaction.type != TransactionType.transfer.value)
     elif category_id:
         q = q.where(Transaction.category_id == category_id)
+    if no_budget:
+        q = q.where(Transaction.budget_id.is_(None), Transaction.type == TransactionType.withdrawal.value)
+    elif budget_id:
+        q = q.where(Transaction.budget_id == budget_id)
     if tag:
         q = q.where(Transaction.tags.any(func.lower(Tag.name) == tag.lower()))
     if date_from:
@@ -67,6 +73,8 @@ def list_transactions(
     account_id: int | None = None,
     category_id: int | None = None,
     uncategorised: bool = False,
+    budget_id: int | None = None,
+    no_budget: bool = False,
     tag: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
@@ -81,6 +89,8 @@ def list_transactions(
         account_id=account_id,
         category_id=category_id,
         uncategorised=uncategorised,
+        budget_id=budget_id,
+        no_budget=no_budget,
         tag=tag,
         date_from=date_from,
         date_to=date_to,

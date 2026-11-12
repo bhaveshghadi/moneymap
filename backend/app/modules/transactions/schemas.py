@@ -20,6 +20,7 @@ class TransactionIn(BaseModel):
     destination_id: int | None = None
     destination_name: str | None = Field(default=None, max_length=120)
     category_id: int | None = None
+    budget_id: int | None = None  # expenses only; ignored for income and transfers
     tags: list[str] = []
     notes: str | None = None
 
@@ -32,6 +33,11 @@ class TransactionIn(BaseModel):
         return v
 
 
+class NamedRef(ORM):
+    id: int
+    name: str
+
+
 class TransactionOut(ORM):
     id: int
     type: str
@@ -41,6 +47,7 @@ class TransactionOut(ORM):
     source: AccountRef
     destination: AccountRef
     category: CategoryRef | None
+    budget: NamedRef | None = None
     tags: list[str]
     notes: str | None
 

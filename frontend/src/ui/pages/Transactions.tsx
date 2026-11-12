@@ -4,7 +4,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { api, qs } from '../lib/api';
 import { useApi, useShell } from '../contexts/ShellCtx';
 import { useTxn } from '../contexts/TxnCtx';
-import type { Account, Category, Tag, Txn, TxnPage } from '../lib/types';
+import type { Account, BudgetMonth, Category, Tag, Txn, TxnPage } from '../lib/types';
 import { fmtDayHead, rs } from '../lib/format';
 import { Money } from '../primitives/Money';
 import { Button } from '../primitives/Button';
@@ -35,6 +35,8 @@ export function TransactionsPage() {
     account: sp.get('account') ?? '',
     category: sp.get('category') ?? '',
     uncategorised: sp.get('uncategorised') ?? '',
+    budget: sp.get('budget') ?? '',
+    no_budget: sp.get('no_budget') ?? '',
     tag: sp.get('tag') ?? '',
     from: sp.get('from') ?? '',
     to: sp.get('to') ?? '',
@@ -63,12 +65,15 @@ export function TransactionsPage() {
   const accounts = useApi<Account[]>('/accounts');
   const categories = useApi<Category[]>('/categories');
   const tags = useApi<Tag[]>('/tags');
+  const budgets = useApi<BudgetMonth>('/budgets');
 
   const query = qs({
     type: filters.type,
     account_id: filters.account,
     category_id: filters.category,
     uncategorised: filters.uncategorised ? true : undefined,
+    budget_id: filters.budget,
+    no_budget: filters.no_budget ? true : undefined,
     tag: filters.tag,
     date_from: filters.from,
     date_to: filters.to,
@@ -209,6 +214,24 @@ export function TransactionsPage() {
           <option value="">All categories</option>
           <option value="none">Uncategorised</option>
           <CategoryOptions categories={categories.data ?? []} />
+        </select>
+        <select
+          className="inp"
+          aria-label="Budget"
+          value={filters.no_budget ? 'none' : filters.budget}
+          onChange={(e) =>
+            e.target.value === 'none'
+              ? setFilter({ budget: '', no_budget: '1' })
+              : setFilter({ budget: e.target.value, no_budget: '' })
+          }
+        >
+          <option value="">All budgets</option>
+          <option value="none">No budget</option>
+          {(budgets.data?.budgets ?? []).map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
         </select>
         <select className="inp" aria-label="Tag" value={filters.tag} onChange={(e) => setFilter({ tag: e.target.value })}>
           <option value="">All tags</option>

@@ -7,6 +7,7 @@ from ...db import get_db
 from ..accounts.models import BALANCE_TYPES, Account
 from ..accounts.service import account_out, account_stats
 from ..auth.security import current_user
+from ..budgets.service import budgets_for_month
 from ..categories.models import Category
 from ..transactions.models import Transaction, TransactionType
 from ..transactions.service import txn_out
@@ -60,6 +61,7 @@ def overview(month: str | None = None, db: Session = Depends(get_db)) -> Overvie
             )
         )
 
+    budgets = [b for b in budgets_for_month(db, label, active_only=True).budgets if b.limit is not None or b.spent]
     recent = db.scalars(select(Transaction).order_by(Transaction.date.desc(), Transaction.id.desc()).limit(8)).unique()
     return Overview(
         month=label,
@@ -70,4 +72,5 @@ def overview(month: str | None = None, db: Session = Depends(get_db)) -> Overvie
         by_category=by_category,
         recent=[txn_out(t) for t in recent],
         transaction_count=db.scalar(select(func.count(Transaction.id))) or 0,
+        budgets=budgets,
     )

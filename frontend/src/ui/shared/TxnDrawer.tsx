@@ -48,6 +48,20 @@ export function TxnDrawer({ txn: t, onClose, onEdit }: { txn: Txn; onClose: () =
               )}
             </span>
           </div>
+          {t.type === 'withdrawal' && (
+            <div className="kv">
+              <span className="k">Budget</span>
+              <span className="v">
+                {t.budget ? (
+                  <Link href={`/transactions?budget=${t.budget.id}`} onClick={onClose}>
+                    {t.budget.name}
+                  </Link>
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </span>
+            </div>
+          )}
           <div className="kv">
             <span className="k">Tags</span>
             <span className="v" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>

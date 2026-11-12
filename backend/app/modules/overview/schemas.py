@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 from ..accounts.schemas import AccountOut
+from ..budgets.schemas import BudgetOut
 from ..transactions.schemas import TransactionOut
 
 
@@ -21,3 +22,4 @@ class Overview(BaseModel):
     by_category: list[CategorySpend]  # the month's spending per category, largest first
     recent: list[TransactionOut]  # latest 8 transactions (any month)
     transaction_count: int  # all transactions, to tell a new install from an empty month
+    budgets: list[BudgetOut] = []  # the month's active budgets that have an amount or spending (F6)

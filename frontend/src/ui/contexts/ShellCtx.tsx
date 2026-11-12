@@ -21,7 +21,11 @@ export function useShell(): ShellCtxValue {
   return useContext(ShellCtx);
 }
 
-/** Fetch `path` (null = skip). Refetches when the path or shell version changes. */
+/** Fetch `path` (null = skip). Refetches when the path or shell version changes.
+ *
+ * The previous data stays visible while a new request runs. `loading` is worked
+ * out from which request the stored result belongs to, so the effect only sets
+ * state when a response arrives (no synchronous setState inside the effect). */
 export function useApi<T>(path: string | null): {
   data: T | null;
   error: string | null;
@@ -29,31 +33,29 @@ export function useApi<T>(path: string | null): {
   reload: () => void;
 } {
   const { version } = useShell();
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(path !== null);
   const [nonce, setNonce] = useState(0);
+  const key = path === null ? null : `${path}#${version}#${nonce}`;
+  const [result, setResult] = useState<{ key: string | null; data: T | null; error: string | null }>({
+    key: null,
+    data: null,
+    error: null,
+  });
 
   useEffect(() => {
-    if (path === null) return;
+    if (path === null || key === null) return;
     let cancelled = false;
-    setLoading(true);
     api<T>(path)
       .then((d) => {
-        if (cancelled) return;
-        setData(d);
-        setError(null);
+        if (!cancelled) setResult({ key, data: d, error: null });
       })
       .catch((e: Error) => {
-        if (!cancelled) setError(e.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setResult((prev) => ({ key, data: prev.data, error: e.message }));
       });
     return () => {
       cancelled = true;
     };
-  }, [path, version, nonce]);
+  }, [path, key]);
 
-  return { data, error, loading, reload: () => setNonce((n) => n + 1) };
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  return { data: result.data, error: result.error, loading: key !== null && result.key !== key, reload };
 }

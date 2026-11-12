@@ -45,8 +45,14 @@ export function TransactionsPage() {
     router.replace(`${pathname}${qs(next)}`, { scroll: false });
   };
 
+  // The search box follows the URL's ?q= when it changes from outside (a link,
+  // Clear filters); typing updates the URL after a short pause.
   const [text, setText] = useState(filters.q);
-  useEffect(() => setText(filters.q), [filters.q]);
+  const [seenQ, setSeenQ] = useState(filters.q);
+  if (filters.q !== seenQ) {
+    setSeenQ(filters.q);
+    setText(filters.q);
+  }
   useEffect(() => {
     if (text === filters.q) return;
     const t = setTimeout(() => setFilter({ q: text }), 300);
@@ -69,31 +75,39 @@ export function TransactionsPage() {
     q: filters.q,
   });
 
-  const [page, setPage] = useState<TxnPage | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // The loaded list remembers which filters (+ data version) it belongs to; when
+  // they change, the stale list is hidden (skeleton) until the new one arrives.
   const [loadingMore, setLoadingMore] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const key = `${query}#${version}#${nonce}`;
+  const [loaded, setLoaded] = useState<{ key: string; page: TxnPage | null; error: string | null }>({
+    key: '',
+    page: null,
+    error: null,
+  });
+  const page = loaded.key === key ? loaded.page : null;
+  const error = loaded.key === key ? loaded.error : null;
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
-    setPage(null);
     api<TxnPage>(`/transactions${query}${query ? '&' : '?'}limit=${PAGE}`)
-      .then((p) => !cancelled && setPage(p))
-      .catch((e: Error) => !cancelled && setError(e.message));
+      .then((p) => !cancelled && setLoaded({ key, page: p, error: null }))
+      .catch((e: Error) => !cancelled && setLoaded({ key, page: null, error: e.message }));
     return () => {
       cancelled = true;
     };
-  }, [query, version, nonce]);
+  }, [query, key]);
 
   const loadMore = async () => {
     if (!page) return;
     setLoadingMore(true);
     try {
       const more = await api<TxnPage>(`/transactions${query}${query ? '&' : '?'}limit=${PAGE}&offset=${page.items.length}`);
-      setPage({ ...more, items: [...page.items, ...more.items] });
+      setLoaded((prev) =>
+        prev.key === key && prev.page ? { ...prev, page: { ...more, items: [...prev.page.items, ...more.items] } } : prev,
+      );
     } catch (e) {
-      setError((e as Error).message);
+      setLoaded((prev) => (prev.key === key ? { ...prev, page: null, error: (e as Error).message } : prev));
     } finally {
       setLoadingMore(false);
     }

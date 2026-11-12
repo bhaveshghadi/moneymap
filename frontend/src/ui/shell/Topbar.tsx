@@ -19,10 +19,17 @@ export function Topbar() {
   const initials = username ? username.slice(0, 2).toUpperCase() : null;
 
   const [q, setQ] = useState('');
-  const [results, setResults] = useState<Txn[] | null>(null);
-  const [searchError, setSearchError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [total, setTotal] = useState(0);
+  // The last answer, remembered with the search it belongs to. It is only shown
+  // while the box still holds that search (2+ characters), so nothing has to be
+  // cleared when the box is emptied.
+  const [found, setFound] = useState<{ query: string; items: Txn[] | null; total: number; error: string | null } | null>(
+    null,
+  );
+  const current = found && found.query === q.trim() && q.trim().length >= 2 ? found : null;
+  const results = current?.items ?? null;
+  const searchError = current?.error ?? null;
+  const total = current?.total ?? 0;
   const openSearch = () => {
     setOpen(false);
     router.push(`/transactions${qs({ q: q.trim() })}`);
@@ -33,24 +40,15 @@ export function Topbar() {
   // Debounced quick search; Enter opens the Transactions page with the same search.
   useEffect(() => {
     const query = q.trim();
-    if (query.length < 2) {
-      setResults(null);
-      setSearchError(null);
-      setOpen(false);
-      return;
-    }
+    if (query.length < 2) return;
     const t = setTimeout(async () => {
       try {
         const data = await api<TxnPage>(`/transactions${qs({ q: query, limit: 8 })}`);
-        setResults(data.items);
-        setTotal(data.total);
-        setSearchError(null);
-        setOpen(true);
+        setFound({ query, items: data.items, total: data.total, error: null });
       } catch {
-        setResults(null);
-        setSearchError('Search failed — try again.');
-        setOpen(true);
+        setFound({ query, items: null, total: 0, error: 'Search failed — try again.' });
       }
+      setOpen(true);
     }, 250);
     return () => clearTimeout(t);
   }, [q]);

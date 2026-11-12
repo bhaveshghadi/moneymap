@@ -30,20 +30,24 @@ export function AccountsPage() {
   const [tab, setTab] = useState<TabId>('own');
   const [editing, setEditing] = useState<{ account?: Account; type: AccountType } | null>(null);
 
-  // /accounts?tab=expense opens that tab.
-  useEffect(() => {
+  // Links into this page: /accounts?tab=expense opens that tab, /accounts?new=asset
+  // opens the add form. Applied while rendering, once per new URL (React's
+  // "adjust state when a prop changes" pattern) instead of in an effect.
+  const search = sp.toString();
+  const [seenSearch, setSeenSearch] = useState<string | null>(null);
+  if (search !== seenSearch) {
+    setSeenSearch(search);
     const t = sp.get('tab');
     if (t && TABS.some((x) => x.id === t)) setTab(t as TabId);
-  }, [sp]);
-
-  // /accounts?new=asset opens the add form.
-  useEffect(() => {
-    const t = sp.get('new') as AccountType | null;
-    if (t && ['asset', 'cash', 'expense', 'revenue'].includes(t)) {
-      setTab(t === 'expense' ? 'expense' : t === 'revenue' ? 'revenue' : 'own');
-      setEditing({ type: t });
-      router.replace(pathname);
+    const n = sp.get('new') as AccountType | null;
+    if (n && ['asset', 'cash', 'expense', 'revenue'].includes(n)) {
+      setTab(n === 'expense' ? 'expense' : n === 'revenue' ? 'revenue' : 'own');
+      setEditing({ type: n });
     }
+  }
+  // …then drop ?new= from the address bar so a reload doesn't open the form again.
+  useEffect(() => {
+    if (sp.get('new')) router.replace(pathname);
   }, [sp, router, pathname]);
 
   const current = TABS.find((t) => t.id === tab)!;

@@ -12,4 +12,4 @@ backend/data
 **/*.tsbuildinfo
 .env
 docs
-bitbucket-pipelines.yml
+.github

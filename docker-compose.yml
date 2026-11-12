@@ -1,0 +1,20 @@
+name: moneymap
+
+services:
+  moneymap:
+    build: .
+    image: moneymap:latest
+    container_name: moneymap
+    init: true
+    ports:
+      - "${MONEYMAP_PORT:-9009}:3000"   # host port (default 9009); the app listens on 3000 inside
+    environment:
+      TZ: Asia/Kolkata
+      # Set to "true" when you serve it over HTTPS (host nginx with TLS).
+      MONEYMAP_COOKIE_SECURE: "${MONEYMAP_COOKIE_SECURE:-false}"
+    volumes:
+      - data:/data          # Compose names it moneymap_data
+    restart: unless-stopped
+
+volumes:
+  data:

@@ -1,0 +1,6 @@
+# Keep Unix line endings in the repo and on checkout (the app runs in a Linux container;
+# a CRLF start.sh would not run).
+* text=auto eol=lf
+*.svg text eol=lf
+*.png binary
+*.ico binary

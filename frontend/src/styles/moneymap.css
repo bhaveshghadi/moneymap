@@ -1,0 +1,184 @@
+/* MoneyMap additions on top of workbench.css. Only new
+   pieces live here; everything else reuses the original classes. */
+
+/* boot bar while the session check runs */
+.boot { height: 100vh; display: flex; align-items: center; justify-content: center; }
+.boot-bar { width: 180px; height: 4px; border-radius: 999px; background: var(--indigo-50); overflow: hidden; }
+.boot-bar i { display: block; width: 40%; height: 100%; background: var(--indigo-500); border-radius: 999px; animation: bootslide 1.1s ease-in-out infinite; }
+@keyframes bootslide { 0% { margin-left: -40%; } 100% { margin-left: 120%; } }
+
+/* drawer form footer */
+.drawer-foot { padding: 14px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; align-items: center; }
+.drawer-foot .spacer { flex: 1; }
+.form-error { background: var(--red-50); color: var(--red-600); border-radius: var(--radius-md); padding: 10px 13px; font-size: 13px; margin-bottom: 14px; }
+textarea.inp { resize: vertical; min-height: 72px; }
+select.inp { appearance: auto; }
+
+.load-more { display: flex; justify-content: center; padding: 14px 0 6px; }
+.liab { color: var(--red-600); }
+.btn.btn-danger { background: var(--red-500); box-shadow: none; color: #fff; }
+.btn.btn-danger:hover { background: var(--red-600); }
+
+/* ---------- phone widths ---------- */
+.tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 640px) {
+  .page-head .actions { flex-wrap: wrap; }
+  .card-head { flex-wrap: wrap; }
+  .catrow .top { flex-wrap: wrap; }
+  .month-nav .lbl { min-width: 0; }
+  .tbl .hide-sm { display: none; }
+  .tbl th, .tbl td { padding-left: 8px; padding-right: 8px; }
+  .filters .inp { flex: 1 1 140px; }
+  .drawer-foot { flex-wrap: wrap; }
+  .tabs { overflow-x: auto; scrollbar-width: none; }
+  .tabs button { flex-shrink: 0; white-space: nowrap; margin-right: 12px; }
+}
+
+/* inline text button */
+.link-btn { background: none; border: 0; padding: 0; color: var(--brand); font: inherit; font-weight: 600; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
+
+/* back-to-top button (shell/ScrollTop.tsx) */
+.scroll-top { position: fixed; right: 24px; bottom: 24px; z-index: 50; width: 44px; height: 44px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-page); color: var(--brand); box-shadow: var(--shadow-lg); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transform: translateY(12px); pointer-events: none; transition: opacity .25s cubic-bezier(.2,.8,.2,1), transform .25s cubic-bezier(.2,.8,.2,1), background .15s ease, color .15s ease; }
+.scroll-top.on { opacity: 1; transform: none; pointer-events: auto; }
+.scroll-top:hover { background: var(--brand); color: #fff; border-color: var(--brand); }
+.scroll-top:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+@media (max-width: 640px) { .scroll-top { right: 16px; bottom: 16px; } }
+
+/* page actions wrap instead of overflowing when there are several */
+.page-head .actions { flex-wrap: wrap; justify-content: flex-end; flex-shrink: 1; min-width: 0; }
+
+
+/* filter bar above lists */
+.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+.filters .inp { width: auto; padding: 7px 11px; font-size: 13.5px; }
+.filters .grow { flex: 1; min-width: 180px; }
+
+/* date group header inside a transaction list */
+.day-head { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-3); padding: 14px 0 4px; }
+.day-head:first-child { padding-top: 4px; }
+
+/* icon + colour pickers */
+.icon-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.icon-grid button { height: 36px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fff; color: var(--fg-2); display: inline-flex; align-items: center; justify-content: center; }
+.icon-grid button.on { border-color: var(--brand); background: var(--indigo-50); color: var(--brand); }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.swatches button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border); }
+.swatches button.on { box-shadow: 0 0 0 2px var(--fg-1); }
+
+/* tag chips with counts */
+.tag-chip { display: inline-flex; align-items: center; gap: 7px; }
+.tag-chip .n { font-size: 11px; font-weight: 700; color: var(--fg-3); }
+.chip.on .n { color: rgba(255,255,255,0.8); }
+
+/* j/k highlighted row (keyboard nav arrives in step 10) */
+.txn.focused { box-shadow: inset 3px 0 0 var(--brand); background: var(--indigo-50); }
+
+/* Categories page: Expense / Income group header rows */
+.tbl tr.cat-group td { padding: 18px 14px 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-2); background: transparent; }
+
+/* Phone widths: transaction rows drop the category icon (the first child of
+   TxnRow's button) so the description and payee get the room. */
+@media (max-width: 640px) {
+  .txn.rowbtn > span:first-child { display: none !important; } /* beats CategoryGlyph's inline display */
+  .txn.rowbtn { gap: 10px; }
+}
+
+/* loan section in the account form (shared/AccountForm.tsx) */
+.loan-fields { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px 4px; margin: 0 0 16px; background: var(--bg-subtle); }
+.loan-fields legend { padding: 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-2); }
+.loan-fields .inp { background: var(--bg-page); }
+.loan-preview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 10px 12px; margin-bottom: 12px; border-radius: var(--radius-sm); background: var(--bg-page); border: 1px solid var(--border); }
+.loan-preview div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.loan-preview .k { font-size: 11px; color: var(--fg-3); }
+.loan-preview b { font-size: 13.5px; }
+@media (max-width: 640px) { .loan-preview { grid-template-columns: repeat(2, 1fr); } }
+
+/* month switcher */
+.month-nav { display: inline-flex; align-items: center; gap: 4px; }
+.month-nav .lbl { min-width: 112px; text-align: center; font-weight: 600; font-size: 14px; }
+
+/* income vs spending chart (shared/TrendChart.tsx) */
+.trend { position: relative; }
+.trend svg { display: block; overflow: visible; }
+.trend-axis { font-size: 11px; fill: var(--fg-3); font-variant-numeric: tabular-nums; }
+.trend-axis.sel { fill: var(--fg-1); font-weight: 700; }
+.trend-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 12.5px; }
+.trend-legend { display: flex; gap: 16px; color: var(--fg-2); }
+.trend-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.trend-legend i, .trend-tip i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.trend-tip { position: absolute; transform: translateX(-50%); pointer-events: none; z-index: 5; min-width: 170px; background: var(--bg-page); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 9px 11px; font-size: 12.5px; color: var(--fg-1); }
+.trend-tip b { display: block; margin-bottom: 5px; font-size: 12.5px; }
+.trend-tip > div { display: flex; align-items: center; gap: 7px; margin-top: 3px; color: var(--fg-2); }
+.trend-tip .fig { margin-left: auto; color: var(--fg-1); font-weight: 600; font-variant-numeric: tabular-nums; }
+.trend-tip .tip-foot { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 5px; }
+
+/* Overview: "needs attention" strip and small rows */
+.attn { margin-bottom: 16px; align-items: center; }
+.attn a { margin-left: auto; font-weight: 600; white-space: nowrap; }
+.mini-total { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; font-size: 13px; color: var(--fg-2); }
+.mini-total b { font-family: var(--font-display); font-size: 18px; color: var(--fg-1); }
+
+/* statement review table */
+.st-tbl td { vertical-align: top; }
+.st-tbl tr.st-needs td { background: color-mix(in srgb, var(--amber-50) 70%, transparent); }
+.st-tbl tr.st-needs td:first-child { box-shadow: inset 3px 0 0 var(--amber-500); }
+.st-sel { padding: 6px 9px; font-size: 13px; width: 100%; min-width: 120px; }
+
+/* file drop area (shared/UploadStatement.tsx) */
+.dropzone { border: 1.5px dashed var(--border-strong); border-radius: var(--radius-md); padding: 26px 16px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; color: var(--fg-2); cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+.dropzone b { color: var(--fg-1); font-size: 14px; word-break: break-all; }
+.dropzone .muted { font-size: 12.5px; }
+.dropzone:hover, .dropzone.over { background: var(--brand-subtle); border-color: var(--brand); color: var(--brand); }
+.dropzone.has-file { border-style: solid; border-color: var(--mint-500); color: var(--mint-600); }
+.dropzone:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
+/* loan schedule (pages/Loan.tsx) */
+.loan-tbl tr.paid td { color: var(--fg-3); }
+.loan-tbl tr.next td { background: var(--brand-subtle); }
+
+/* CAS review (pages/CasReview.tsx) */
+.cas-tbl tr.muted-row td { color: var(--fg-3); }
+
+/* investment details in the account dialog (shared/InvestmentFields.tsx) */
+.inv-fields { border-left: 3px solid var(--brand-subtle); padding-left: 12px; margin-bottom: 4px; }
+.scheme-list { position: absolute; left: 0; right: 0; top: 100%; z-index: 20; max-height: 260px; overflow-y: auto; box-shadow: var(--shadow-lg); margin-top: 4px; }
+.scheme-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 12px; width: 100%; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+.scheme-row:hover, .scheme-row:focus-visible { background: var(--bg-subtle); }
+/* allocation bar (pages/Investments.tsx) */
+.alloc-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--bg-sunken); }
+.alloc-bar i { display: block; height: 100%; }
+.alloc-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12.5px; }
+.alloc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.alloc-legend b { display: inline-block; width: 9px; height: 9px; border-radius: 3px; }
+
+/* Settings: Reset card */
+.reset-options { display: flex; flex-direction: column; gap: 14px; }
+.reset-option { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.reset-option p { margin: 2px 0 0; font-size: 13px; }
+.reset-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+
+/* guided tours (shell/Tour.tsx) */
+.tour { position: fixed; inset: 0; z-index: 200; }
+.tour-catch { position: absolute; inset: 0; }
+.tour-dim { position: absolute; inset: 0; background: rgba(20, 21, 42, 0.55); pointer-events: none; }
+.tour-spot { position: fixed; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(20, 21, 42, 0.55); outline: 2px solid var(--brand); pointer-events: none; transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease; }
+.tour-card { position: fixed; width: min(340px, calc(100vw - 24px)); background: var(--bg-page); color: var(--fg-1); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 14px 16px 12px; transition: top .25s ease, left .25s ease; }
+.tour-card h3 { margin: 2px 0 6px; font-size: 16px; }
+.tour-card p { white-space: pre-line; margin: 0 0 14px; font-size: 13.5px; line-height: 1.5; color: var(--fg-2); }
+.tour-top { display: flex; align-items: center; justify-content: space-between; }
+.tour-kicker { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--brand); }
+.tour-foot { display: flex; align-items: center; gap: 6px; }
+.tour-dots { display: flex; gap: 5px; flex: 1; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 999px; background: var(--border-strong); }
+.tour-dots i.on { background: var(--brand); width: 16px; }
+@media (prefers-reduced-motion: reduce) { .tour-spot, .tour-card { transition: none; } }
+
+/* Grid columns may shrink below their longest line (long loan/card rows made
+   the Overview's Loans + Credit cards cards 6px too wide on phones). */
+.grid-2 > *, .grid-2e > *, .grid-3 > *, .grid-4 > * { min-width: 0; }
+
+/* Phones: no keyboard, so no shortcuts button — keeps the avatar on screen. */
+@media (max-width: 640px) {
+  .topbar .kbd-btn { display: none; }
+}

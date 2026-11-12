@@ -1,0 +1,27 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+backend/.venv/
+backend/data/
+
+# local-only notes about the real data / this install
+CLAUDE.local.md
+.claude/settings.local.json
+
+# data, secrets, uploads (never commit)
+*.db
+*.db-wal
+*.db-shm
+*.pdf
+.env
+.env.*
+!.env.example
+secret_key
+
+# AI
+*.md

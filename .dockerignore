@@ -1,0 +1,15 @@
+**/node_modules
+**/.next
+**/__pycache__
+**/*.pyc
+backend/.venv
+backend/data
+.git
+*.md
+!README.md
+**/.pytest_cache
+**/.ruff_cache
+**/*.tsbuildinfo
+.env
+docs
+bitbucket-pipelines.yml

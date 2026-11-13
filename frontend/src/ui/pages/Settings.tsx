@@ -6,6 +6,7 @@ import { Button } from '../primitives/Button';
 import { SectionCard } from '../primitives/SectionCard';
 import { Icon } from '../primitives/Icon';
 import { ResetCard } from '../shared/ResetCard';
+import { GmailCard } from '../shared/GmailCard';
 
 export function SettingsPage() {
   const { username } = useShell();
@@ -48,6 +49,10 @@ export function SettingsPage() {
         <div className="actions">
           <Button variant="secondary" icon="log-out" onClick={logout}>Sign out</Button>
         </div>
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <GmailCard />
       </div>
 
       <div className="grid-2e">

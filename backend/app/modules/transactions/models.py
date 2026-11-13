@@ -9,6 +9,7 @@ from ..accounts.models import Account
 from ..bills.models import Bill
 from ..budgets.models import Budget
 from ..categories.models import Category, Tag
+from ..gmail.models import GmailMessage
 
 
 class TransactionType(enum.StrEnum):
@@ -55,6 +56,11 @@ class Transaction(Base):
     bill_id: Mapped[int | None] = mapped_column(
         ForeignKey("bill.id", ondelete="SET NULL", name="fk_transaction_bill_id_bill"), index=True
     )
+    # The Inbox email this transaction was recorded from (Gmail import).
+    gmail_message_id: Mapped[str | None] = mapped_column(
+        ForeignKey("gmail_message.id", ondelete="SET NULL", name="fk_transaction_gmail_message_id_gmail_message"),
+        index=True,
+    )
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -64,4 +70,5 @@ class Transaction(Base):
     category: Mapped[Category | None] = relationship(lazy="joined")
     budget: Mapped[Budget | None] = relationship(lazy="joined")
     bill: Mapped[Bill | None] = relationship(lazy="joined")
+    gmail_message: Mapped[GmailMessage | None] = relationship(lazy="joined")
     tags: Mapped[list[Tag]] = relationship(secondary=transaction_tag, lazy="selectin")

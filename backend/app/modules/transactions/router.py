@@ -10,7 +10,7 @@ from ..auth.security import current_user
 from ..categories.models import Tag
 from .models import Transaction, TransactionType
 from .schemas import TransactionIn, TransactionOut, TransactionPage
-from .service import apply_body, txn_out
+from .service import apply_body, sync_inbox_status, txn_out
 
 router = APIRouter(prefix="/transactions", tags=["transactions"], dependencies=[Depends(current_user)])
 
@@ -133,6 +133,7 @@ def create_transaction(body: TransactionIn, db: Session = Depends(get_db)) -> Tr
     t = Transaction()
     apply_body(db, t, body, is_new=True)
     db.add(t)
+    sync_inbox_status(db, t.gmail_message_id)
     db.commit()
     db.refresh(t)
     return txn_out(t)
@@ -146,7 +147,9 @@ def get_transaction(tid: int, db: Session = Depends(get_db)) -> TransactionOut:
 @router.put("/{tid}", response_model=TransactionOut)
 def update_transaction(tid: int, body: TransactionIn, db: Session = Depends(get_db)) -> TransactionOut:
     t = _get(db, tid)
+    before = t.gmail_message_id
     apply_body(db, t, body, is_new=False)
+    sync_inbox_status(db, before, t.gmail_message_id)
     db.commit()
     db.refresh(t)
     return txn_out(t)
@@ -154,5 +157,8 @@ def update_transaction(tid: int, body: TransactionIn, db: Session = Depends(get_
 
 @router.delete("/{tid}", status_code=204)
 def delete_transaction(tid: int, db: Session = Depends(get_db)) -> None:
-    db.delete(_get(db, tid))
+    t = _get(db, tid)
+    mid = t.gmail_message_id
+    db.delete(t)
+    sync_inbox_status(db, mid)
     db.commit()

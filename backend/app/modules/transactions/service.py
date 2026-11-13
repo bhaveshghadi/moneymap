@@ -10,6 +10,7 @@ from ..bills.models import Bill
 from ..bills.service import match_bill
 from ..budgets.models import Budget
 from ..categories.models import Category, Tag
+from ..gmail.models import GmailMessage
 from .models import Transaction, TransactionType
 from .schemas import TransactionIn, TransactionOut
 
@@ -29,6 +30,11 @@ def txn_out(t: Transaction) -> TransactionOut:
         category=t.category,  # type: ignore[arg-type]
         budget=t.budget,  # type: ignore[arg-type]
         bill=t.bill,  # type: ignore[arg-type]
+        gmail=(
+            {"id": t.gmail_message.id, "subject": t.gmail_message.subject, "from_addr": t.gmail_message.from_addr}
+            if t.gmail_message
+            else None
+        ),
         tags=sorted(tag.name for tag in t.tags),
         notes=t.notes,
     )
@@ -107,6 +113,9 @@ def apply_body(db: Session, t: Transaction, body: TransactionIn, is_new: bool) -
             matched = match_bill(db, body.description, dst.name, body.amount)
             bill_id = matched.id if matched else None
 
+    if body.gmail_message_id and db.get(GmailMessage, body.gmail_message_id) is None:
+        raise _bad("That Inbox email no longer exists")
+
     tags: list[Tag] = []
     for raw in sorted({n.strip() for n in body.tags if n.strip()}, key=str.lower):
         tag = db.scalar(select(Tag).where(func.lower(Tag.name) == raw.lower()))
@@ -125,5 +134,18 @@ def apply_body(db: Session, t: Transaction, body: TransactionIn, is_new: bool) -
     t.category_id = category_id
     t.budget_id = budget_id
     t.bill_id = bill_id
+    t.gmail_message_id = body.gmail_message_id or None
     t.notes = (body.notes or "").strip() or None
     t.tags = tags
+
+
+def sync_inbox_status(db: Session, *message_ids: str | None) -> None:
+    """An Inbox email is 'handled' while at least one transaction points at it, and
+    'new' again when none do (ignored emails stay ignored)."""
+    db.flush()
+    for mid in {m for m in message_ids if m}:
+        msg = db.get(GmailMessage, mid)
+        if msg is None or msg.status == "ignored":
+            continue
+        linked = db.scalar(select(func.count(Transaction.id)).where(Transaction.gmail_message_id == mid))
+        msg.status = "handled" if linked else "new"

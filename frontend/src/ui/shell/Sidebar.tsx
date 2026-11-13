@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon } from '../primitives/Icon';
+import { useApi } from '../contexts/ShellCtx';
 
 interface NavItem {
   href: string;
@@ -14,6 +15,8 @@ interface NavItem {
 const MAIN: NavItem[] = [
   { href: '/', label: 'Overview', icon: 'layout-dashboard' },
   { href: '/transactions', label: 'Transactions', icon: 'arrow-left-right' },
+  { href: '/inbox', label: 'Inbox', icon: 'inbox' },
+  { href: '/statements', label: 'Statements', icon: 'file-spreadsheet' },
   { href: '/accounts', label: 'Accounts', icon: 'landmark' },
   { href: '/budgets', label: 'Budgets', icon: 'gauge' },
   { href: '/bills', label: 'Bills', icon: 'receipt-text' },
@@ -27,6 +30,9 @@ const TOOLS: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  // the Inbox shows how many fetched emails are still to deal with
+  const inbox = useApi<{ new: number }>('/inbox/counts');
+  const main = MAIN.map((t) => (t.href === '/inbox' && inbox.data?.new ? { ...t, count: inbox.data.new } : t));
 
   const renderItem = (it: NavItem) => {
     const active = it.href === '/' ? pathname === '/' : pathname === it.href || pathname.startsWith(`${it.href}/`);
@@ -51,7 +57,7 @@ export function Sidebar() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/assets/logo-wordmark.svg" alt="MoneyMap" style={{ height: 26 }} />
       </div>
-      <div className="sb-nav">{MAIN.map(renderItem)}</div>
+      <div className="sb-nav">{main.map(renderItem)}</div>
       <div className="sb-section">Setup</div>
       <div className="sb-nav">{TOOLS.map(renderItem)}</div>
       <div className="sb-foot">

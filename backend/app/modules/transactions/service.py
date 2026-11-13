@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from ..accounts.models import BALANCE_TYPES, Account, AccountType
 from ..accounts.service import find_or_create_counterparty
+from ..bills.models import Bill
+from ..bills.service import match_bill
 from ..budgets.models import Budget
 from ..categories.models import Category, Tag
 from .models import Transaction, TransactionType
@@ -26,6 +28,7 @@ def txn_out(t: Transaction) -> TransactionOut:
         destination=t.destination,  # type: ignore[arg-type]
         category=t.category,  # type: ignore[arg-type]
         budget=t.budget,  # type: ignore[arg-type]
+        bill=t.bill,  # type: ignore[arg-type]
         tags=sorted(tag.name for tag in t.tags),
         notes=t.notes,
     )
@@ -73,8 +76,8 @@ def resolve_accounts(db: Session, body: TransactionIn) -> tuple[Account, Account
     return src, dst
 
 
-def apply_body(db: Session, t: Transaction, body: TransactionIn) -> None:
-    """Fill `t` from the request body after validating it."""
+def apply_body(db: Session, t: Transaction, body: TransactionIn, is_new: bool) -> None:
+    """Fill `t` from the request body after validating it. `is_new` allows bill auto-matching."""
     src, dst = resolve_accounts(db, body)
     category_id = None
     # Categories describe spending/income; transfers between your own accounts stay uncategorised.
@@ -93,6 +96,17 @@ def apply_body(db: Session, t: Transaction, body: TransactionIn) -> None:
             raise _bad("Budget not found")
         budget_id = body.budget_id
 
+    # Bills only apply to expenses; a new expense without one may be matched automatically.
+    bill_id = None
+    if body.type == TransactionType.withdrawal:
+        if body.bill_id is not None:
+            if db.get(Bill, body.bill_id) is None:
+                raise _bad("Bill not found")
+            bill_id = body.bill_id
+        elif is_new and body.auto_match_bill:
+            matched = match_bill(db, body.description, dst.name, body.amount)
+            bill_id = matched.id if matched else None
+
     tags: list[Tag] = []
     for raw in sorted({n.strip() for n in body.tags if n.strip()}, key=str.lower):
         tag = db.scalar(select(Tag).where(func.lower(Tag.name) == raw.lower()))
@@ -110,5 +124,6 @@ def apply_body(db: Session, t: Transaction, body: TransactionIn) -> None:
     t.destination_id = dst.id
     t.category_id = category_id
     t.budget_id = budget_id
+    t.bill_id = bill_id
     t.notes = (body.notes or "").strip() or None
     t.tags = tags

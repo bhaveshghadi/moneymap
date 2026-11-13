@@ -7,6 +7,7 @@ from ...db import get_db
 from ..accounts.models import BALANCE_TYPES, Account
 from ..accounts.service import account_out, account_stats
 from ..auth.security import current_user
+from ..bills.service import upcoming
 from ..budgets.service import budgets_for_month
 from ..categories.models import Category
 from ..transactions.models import Transaction, TransactionType
@@ -73,4 +74,5 @@ def overview(month: str | None = None, db: Session = Depends(get_db)) -> Overvie
         recent=[txn_out(t) for t in recent],
         transaction_count=db.scalar(select(func.count(Transaction.id))) or 0,
         budgets=budgets,
+        upcoming_bills=upcoming(db, days=30) if label == month_bounds(None)[2] else [],
     )

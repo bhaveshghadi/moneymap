@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { replaceQuery } from '../lib/api';
 import { useApi } from '../contexts/ShellCtx';
 import type { Account, AccountType } from '../lib/types';
 import { ACCOUNT_TYPE_ICON, fmtDate, rs } from '../lib/format';
@@ -24,7 +25,6 @@ const TABS: { id: TabId; label: string; types: AccountType[]; addAs: AccountType
 
 export function AccountsPage() {
   const sp = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
   const { data, error, reload } = useApi<Account[]>('/accounts');
   const [tab, setTab] = useState<TabId>('own');
@@ -47,8 +47,8 @@ export function AccountsPage() {
   }
   // …then drop ?new= from the address bar so a reload doesn't open the form again.
   useEffect(() => {
-    if (sp.get('new')) router.replace(pathname);
-  }, [sp, router, pathname]);
+    if (sp.get('new')) replaceQuery(pathname, '');
+  }, [sp, pathname]);
 
   const current = TABS.find((t) => t.id === tab)!;
   const rows = (data ?? []).filter((a) => current.types.includes(a.type));

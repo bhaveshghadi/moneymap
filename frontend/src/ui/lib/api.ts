@@ -46,6 +46,14 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
 }
 
 /** Build a query string, skipping empty values. */
+/** Change the address bar's query without a navigation. Next.js keeps
+ * useSearchParams in sync with history.replaceState; router.replace() can
+ * ignore a change back to the bare pathname on a page that was opened with a
+ * query string (it is prerendered without one). */
+export function replaceQuery(pathname: string, query: string): void {
+  window.history.replaceState(null, '', `${pathname}${query}`);
+}
+
 export function qs(params: Record<string, string | number | boolean | null | undefined>): string {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {

@@ -6,6 +6,7 @@ from . import models  # noqa: F401  (registers every table before the routers us
 from .config import APP_VERSION
 from .modules.accounts.router import router as accounts_router
 from .modules.auth.router import router as auth_router
+from .modules.bills.router import router as bills_router
 from .modules.budgets.router import router as budgets_router
 from .modules.categories.router import router as categories_router
 from .modules.overview.router import router as overview_router
@@ -30,6 +31,7 @@ for r in (
     transactions_router,
     overview_router,
     budgets_router,
+    bills_router,
     reset_router,
 ):
     app.include_router(r, prefix="/api")

@@ -16,6 +16,7 @@ const MAIN: NavItem[] = [
   { href: '/transactions', label: 'Transactions', icon: 'arrow-left-right' },
   { href: '/accounts', label: 'Accounts', icon: 'landmark' },
   { href: '/budgets', label: 'Budgets', icon: 'gauge' },
+  { href: '/bills', label: 'Bills', icon: 'receipt-text' },
 ];
 
 const TOOLS: NavItem[] = [

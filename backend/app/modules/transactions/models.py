@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ...db import Base
 from ..accounts.models import Account
+from ..bills.models import Bill
 from ..budgets.models import Budget
 from ..categories.models import Category, Tag
 
@@ -50,6 +51,10 @@ class Transaction(Base):
     budget_id: Mapped[int | None] = mapped_column(
         ForeignKey("budget.id", ondelete="SET NULL", name="fk_transaction_budget_id_budget"), index=True
     )
+    # Only expenses are linked to a bill (F7).
+    bill_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bill.id", ondelete="SET NULL", name="fk_transaction_bill_id_bill"), index=True
+    )
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -58,4 +63,5 @@ class Transaction(Base):
     destination: Mapped[Account] = relationship(foreign_keys=[destination_id], lazy="joined")
     category: Mapped[Category | None] = relationship(lazy="joined")
     budget: Mapped[Budget | None] = relationship(lazy="joined")
+    bill: Mapped[Bill | None] = relationship(lazy="joined")
     tags: Mapped[list[Tag]] = relationship(secondary=transaction_tag, lazy="selectin")

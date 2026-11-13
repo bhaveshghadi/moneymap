@@ -17,6 +17,7 @@ const MAIN: NavItem[] = [
   { href: '/accounts', label: 'Accounts', icon: 'landmark' },
   { href: '/budgets', label: 'Budgets', icon: 'gauge' },
   { href: '/bills', label: 'Bills', icon: 'receipt-text' },
+  { href: '/piggy-banks', label: 'Piggy banks', icon: 'piggy-bank' },
 ];
 
 const TOOLS: NavItem[] = [

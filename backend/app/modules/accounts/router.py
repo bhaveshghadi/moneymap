@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from ...db import get_db
 from ..auth.security import current_user
+from ..piggybanks.models import PiggyBank
 from ..transactions.models import Transaction
 from .models import BALANCE_TYPES, Account, AccountType
 from .schemas import AccountIn, AccountOut, AccountPatch
@@ -102,6 +103,12 @@ def delete_account(account_id: int, db: Session = Depends(get_db)) -> None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"This account has {used} transaction(s). Delete those first, or mark the account inactive.",
+        )
+    piggies = db.scalar(select(func.count()).select_from(PiggyBank).where(PiggyBank.account_id == a.id))
+    if piggies:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"This account has {piggies} piggy bank(s). Delete or move them first, or mark the account inactive.",
         )
     db.delete(a)
     db.commit()

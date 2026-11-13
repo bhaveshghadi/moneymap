@@ -152,3 +152,26 @@ export interface BillDue {
   status: BillStatus;
   expected: number;
 }
+
+// ---------- piggy banks (F8)
+
+export interface Piggy {
+  id: number;
+  name: string;
+  account: AccountRef;
+  target_amount: number;
+  target_date: string | null;
+  active: boolean;
+  notes: string | null;
+  saved: number;
+  account_balance: number;
+  account_available: number; // the account's balance not yet set aside in any piggy bank
+  monthly_needed: number | null;
+}
+
+export interface PiggyEvent {
+  id: number;
+  date: string;
+  amount: number; // + set aside, - taken out
+  note: string | null;
+}

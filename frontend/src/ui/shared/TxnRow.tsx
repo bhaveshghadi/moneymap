@@ -49,6 +49,7 @@ export function TxnRow({
           <span>{counterparty(t)}</span>
           {own && <span>· {own}</span>}
           {t.category ? <span>· {t.category.name}</span> : t.type !== 'transfer' && <span className="badge cau">Uncategorised</span>}
+          {t.bill && <span className="badge coral">Bill · {t.bill.name}</span>}
           {t.tags.map((tag) => (
             <span key={tag} className="badge neutral">
               #{tag}

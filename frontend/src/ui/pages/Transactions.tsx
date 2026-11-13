@@ -1,16 +1,17 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { api, qs } from '../lib/api';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { api, qs, replaceQuery } from '../lib/api';
 import { useApi, useShell } from '../contexts/ShellCtx';
 import { useTxn } from '../contexts/TxnCtx';
-import type { Account, BudgetMonth, Category, Tag, Txn, TxnPage } from '../lib/types';
+import type { Account, Bill, BudgetMonth, Category, Tag, Txn, TxnPage } from '../lib/types';
 import { fmtDayHead, rs } from '../lib/format';
 import { Money } from '../primitives/Money';
 import { Button } from '../primitives/Button';
 import { Skeleton } from '../primitives/Skeleton';
 import { EmptyState } from '../primitives/EmptyState';
 import { ErrorState } from '../primitives/ErrorState';
+import { Icon } from '../primitives/Icon';
 import { TxnRow } from '../shared/TxnRow';
 import { CategoryOptions } from '../shared/CategoryOptions';
 
@@ -23,7 +24,6 @@ const TYPES = [
 ];
 
 export function TransactionsPage() {
-  const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
   const { version } = useShell();
@@ -37,6 +37,7 @@ export function TransactionsPage() {
     uncategorised: sp.get('uncategorised') ?? '',
     budget: sp.get('budget') ?? '',
     no_budget: sp.get('no_budget') ?? '',
+    bill: sp.get('bill') ?? '',
     tag: sp.get('tag') ?? '',
     from: sp.get('from') ?? '',
     to: sp.get('to') ?? '',
@@ -44,7 +45,7 @@ export function TransactionsPage() {
   };
   const setFilter = (patch: Partial<typeof filters>) => {
     const next = { ...filters, ...patch };
-    router.replace(`${pathname}${qs(next)}`, { scroll: false });
+    replaceQuery(pathname, qs(next));
   };
 
   // The search box follows the URL's ?q= when it changes from outside (a link,
@@ -66,6 +67,7 @@ export function TransactionsPage() {
   const categories = useApi<Category[]>('/categories');
   const tags = useApi<Tag[]>('/tags');
   const budgets = useApi<BudgetMonth>('/budgets');
+  const bills = useApi<Bill[]>('/bills');
 
   const query = qs({
     type: filters.type,
@@ -74,6 +76,7 @@ export function TransactionsPage() {
     uncategorised: filters.uncategorised ? true : undefined,
     budget_id: filters.budget,
     no_budget: filters.no_budget ? true : undefined,
+    bill_id: filters.bill,
     tag: filters.tag,
     date_from: filters.from,
     date_to: filters.to,
@@ -246,8 +249,21 @@ export function TransactionsPage() {
         </select>
         <input className="inp" type="date" aria-label="From date" value={filters.from} onChange={(e) => setFilter({ from: e.target.value })} />
         <input className="inp" type="date" aria-label="To date" value={filters.to} onChange={(e) => setFilter({ to: e.target.value })} />
+        {filters.bill && (
+          <span className="badge coral" style={{ fontSize: 12.5, padding: '6px 10px' }}>
+            Bill · {bills.data?.find((b) => String(b.id) === filters.bill)?.name ?? filters.bill}
+            <button
+              type="button"
+              aria-label="Remove bill filter"
+              onClick={() => setFilter({ bill: '' })}
+              style={{ border: 0, background: 'none', color: 'inherit', padding: 0, lineHeight: 0 }}
+            >
+              <Icon name="x" size={13} />
+            </button>
+          </span>
+        )}
         {activeFilters && (
-          <Button variant="ghost" size="sm" icon="x" onClick={() => router.replace(pathname)}>
+          <Button variant="ghost" size="sm" icon="x" onClick={() => replaceQuery(pathname, '')}>
             Clear filters
           </Button>
         )}

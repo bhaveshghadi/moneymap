@@ -88,6 +88,7 @@ export interface Txn {
   destination: AccountRef;
   category: CategoryRef | null;
   budget: NamedRef | null;
+  bill: NamedRef | null;
   tags: string[];
   notes: string | null;
 }
@@ -117,4 +118,37 @@ export interface Overview {
   recent: Txn[];
   transaction_count: number;
   budgets: Budget[]; // the month's active budgets with an amount or spending
+  upcoming_bills: BillDue[]; // overdue + due in the next 30 days (current month only)
+}
+
+// ---------- bills (F7)
+
+export type BillRepeat = 'weekly' | 'monthly' | 'quarterly' | 'half_yearly' | 'yearly';
+export type BillStatus = 'paid' | 'due_soon' | 'overdue' | 'upcoming' | 'inactive';
+
+export interface Bill {
+  id: number;
+  name: string;
+  amount_min: number;
+  amount_max: number;
+  first_due: string;
+  repeat: BillRepeat;
+  skip: number;
+  match: string | null;
+  active: boolean;
+  notes: string | null;
+  next_due: string | null;
+  status: BillStatus;
+  last_paid_date: string | null;
+  last_paid_amount: number | null;
+  monthly_cost: number;
+  transaction_count: number;
+}
+
+export interface BillDue {
+  bill_id: number;
+  name: string;
+  due: string;
+  status: BillStatus;
+  expected: number;
 }

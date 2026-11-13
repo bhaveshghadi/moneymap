@@ -18,3 +18,15 @@ export function Progress({ value, max, savings = false }: { value: number; max: 
   );
 }
 
+/** Status pill for bills. */
+export function BillBadge({ status }: { status: string }) {
+  const map: Record<string, [string, string]> = {
+    paid: ['mint', 'Paid'],
+    due_soon: ['cau', 'Due soon'],
+    overdue: ['red', 'Overdue'],
+    upcoming: ['neutral', 'Upcoming'],
+    inactive: ['neutral', 'Inactive'],
+  };
+  const [cls, label] = map[status] ?? ['neutral', status];
+  return <span className={`badge ${cls}`}>{label}</span>;
+}

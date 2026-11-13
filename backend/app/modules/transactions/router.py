@@ -24,6 +24,7 @@ def _filtered(
     uncategorised: bool,
     budget_id: int | None,
     no_budget: bool,
+    bill_id: int | None,
     tag: str | None,
     date_from: date | None,
     date_to: date | None,
@@ -41,6 +42,8 @@ def _filtered(
         q = q.where(Transaction.budget_id.is_(None), Transaction.type == TransactionType.withdrawal.value)
     elif budget_id:
         q = q.where(Transaction.budget_id == budget_id)
+    if bill_id:
+        q = q.where(Transaction.bill_id == bill_id)
     if tag:
         q = q.where(Transaction.tags.any(func.lower(Tag.name) == tag.lower()))
     if date_from:
@@ -75,6 +78,7 @@ def list_transactions(
     uncategorised: bool = False,
     budget_id: int | None = None,
     no_budget: bool = False,
+    bill_id: int | None = None,
     tag: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
@@ -91,6 +95,7 @@ def list_transactions(
         uncategorised=uncategorised,
         budget_id=budget_id,
         no_budget=no_budget,
+        bill_id=bill_id,
         tag=tag,
         date_from=date_from,
         date_to=date_to,
@@ -126,7 +131,7 @@ def _get(db: Session, tid: int) -> Transaction:
 @router.post("", response_model=TransactionOut, status_code=201)
 def create_transaction(body: TransactionIn, db: Session = Depends(get_db)) -> TransactionOut:
     t = Transaction()
-    apply_body(db, t, body)
+    apply_body(db, t, body, is_new=True)
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -141,7 +146,7 @@ def get_transaction(tid: int, db: Session = Depends(get_db)) -> TransactionOut:
 @router.put("/{tid}", response_model=TransactionOut)
 def update_transaction(tid: int, body: TransactionIn, db: Session = Depends(get_db)) -> TransactionOut:
     t = _get(db, tid)
-    apply_body(db, t, body)
+    apply_body(db, t, body, is_new=False)
     db.commit()
     db.refresh(t)
     return txn_out(t)

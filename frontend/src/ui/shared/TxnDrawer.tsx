@@ -50,6 +50,20 @@ export function TxnDrawer({ txn: t, onClose, onEdit }: { txn: Txn; onClose: () =
           </div>
           {t.type === 'withdrawal' && (
             <div className="kv">
+              <span className="k">Bill</span>
+              <span className="v">
+                {t.bill ? (
+                  <Link href={`/transactions?bill=${t.bill.id}`} onClick={onClose}>
+                    {t.bill.name}
+                  </Link>
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </span>
+            </div>
+          )}
+          {t.type === 'withdrawal' && (
+            <div className="kv">
               <span className="k">Budget</span>
               <span className="v">
                 {t.budget ? (

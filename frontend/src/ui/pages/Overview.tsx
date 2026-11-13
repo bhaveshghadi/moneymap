@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useApi } from '../contexts/ShellCtx';
 import { useTxn } from '../contexts/TxnCtx';
 import type { Overview } from '../lib/types';
-import { ACCOUNT_TYPE_ICON, ACCOUNT_TYPE_LABEL, currentMonth, monthLabel, monthRange, rs, shiftMonth } from '../lib/format';
+import { ACCOUNT_TYPE_ICON, ACCOUNT_TYPE_LABEL, currentMonth, dueText, fmtDate, monthLabel, monthRange, rs, shiftMonth } from '../lib/format';
 import { qs } from '../lib/api';
 import { Money } from '../primitives/Money';
 import { StatCard } from '../primitives/StatCard';
@@ -15,7 +15,7 @@ import { ErrorState } from '../primitives/ErrorState';
 import { CategoryGlyph, PALETTE } from '../primitives/CategoryGlyph';
 import { Icon } from '../primitives/Icon';
 import { TxnRow } from '../shared/TxnRow';
-import { Progress } from '../shared/Progress';
+import { BillBadge, Progress } from '../shared/Progress';
 
 function Row({ href, glyph, title, sub, right }: { href: string; glyph: ReactNode; title: ReactNode; sub: ReactNode; right: ReactNode }) {
   return (
@@ -194,6 +194,28 @@ export function OverviewPage() {
           )}
         </SectionCard>
       </div>
+
+      {data.upcoming_bills.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <SectionCard title="Upcoming bills" action={{ label: 'All bills', href: '/bills' }}>
+            {data.upcoming_bills.map((u) => (
+              <Row
+                key={u.bill_id}
+                href={`/transactions?bill=${u.bill_id}`}
+                glyph={<CategoryGlyph icon="receipt-text" color={u.status === 'overdue' ? 'red' : 'coral'} size={34} />}
+                title={u.name}
+                sub={`${fmtDate(u.due)} · ${dueText(u.due)}`}
+                right={
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                    <Money amount={rs(u.expected)} interactive={false} />
+                    <BillBadge status={u.status} />
+                  </span>
+                }
+              />
+            ))}
+          </SectionCard>
+        </div>
+      )}
 
       {data.budgets.length > 0 && (
         <div style={{ marginBottom: 16 }}>

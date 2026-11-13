@@ -1,6 +1,6 @@
 'use client';
 import { useState, type FormEvent } from 'react';
-import type { Account, BudgetMonth, Category, Tag, Txn, TxnType } from '../lib/types';
+import type { Account, Bill, BudgetMonth, Category, Tag, Txn, TxnType } from '../lib/types';
 import { api } from '../lib/api';
 import { paiseToInput, toPaise, todayIso } from '../lib/format';
 import { useApi, useShell } from '../contexts/ShellCtx';
@@ -21,6 +21,7 @@ export interface TxnDefaults {
   destination_name?: string;
   category_id?: number;
   budget_id?: number;
+  bill_id?: number;
   notes?: string;
 }
 
@@ -43,6 +44,7 @@ function initial(txn?: Txn, d: TxnDefaults = {}) {
       destName: txn.type === 'withdrawal' ? txn.destination.name : '',
       categoryId: txn.category ? String(txn.category.id) : '',
       budgetId: txn.budget ? String(txn.budget.id) : '',
+      billId: txn.bill ? String(txn.bill.id) : 'none',
       tags: txn.tags.join(', '),
       notes: txn.notes ?? '',
     };
@@ -58,6 +60,8 @@ function initial(txn?: Txn, d: TxnDefaults = {}) {
     destName: d.destination_name ?? '',
     categoryId: d.category_id ? String(d.category_id) : '',
     budgetId: d.budget_id ? String(d.budget_id) : '',
+    // 'auto' = let the server match a bill; 'none' = not a bill; otherwise a bill id
+    billId: d.bill_id ? String(d.bill_id) : 'auto',
     tags: '',
     notes: d.notes ?? '',
   };
@@ -84,6 +88,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const categories = useApi<Category[]>('/categories');
   const tags = useApi<Tag[]>('/tags');
   const budgets = useApi<BudgetMonth>(`/budgets?month=${f.date.slice(0, 7)}`);
+  const bills = useApi<Bill[]>('/bills');
 
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
   // Inactive accounts are hidden, except the one this transaction already uses.
@@ -105,6 +110,8 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
       description: f.description,
       category_id: f.type !== 'transfer' && f.categoryId ? Number(f.categoryId) : null,
       budget_id: f.type === 'withdrawal' && f.budgetId ? Number(f.budgetId) : null,
+      bill_id: f.type === 'withdrawal' && !['auto', 'none'].includes(f.billId) ? Number(f.billId) : null,
+      auto_match_bill: f.billId === 'auto',
       tags: f.tags.split(',').map((s) => s.trim()).filter(Boolean),
       notes: f.notes || null,
     };
@@ -225,6 +232,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
           </div>
         )}
         {f.type === 'withdrawal' && (
+          <div className="row2">
           <div className="field">
             <label htmlFor="tx-budget">Budget</label>
             <select id="tx-budget" className="inp" value={f.budgetId} onChange={(e) => set('budgetId', e.target.value)}>
@@ -237,6 +245,21 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
                   </option>
                 ))}
             </select>
+          </div>
+          <div className="field">
+            <label htmlFor="tx-bill">Bill</label>
+            <select id="tx-bill" className="inp" value={f.billId} onChange={(e) => set('billId', e.target.value)}>
+              {!txn && <option value="auto">Match automatically</option>}
+              <option value="none">Not a bill</option>
+              {(bills.data ?? [])
+                .filter((b) => b.active || String(b.id) === f.billId)
+                .map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+            </select>
+          </div>
           </div>
         )}
         <div className="field">

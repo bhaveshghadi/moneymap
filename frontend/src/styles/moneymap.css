@@ -21,12 +21,14 @@ select.inp { appearance: auto; }
 
 /* ---------- phone widths ---------- */
 .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.only-sm { display: none; }
 @media (max-width: 640px) {
   .page-head .actions { flex-wrap: wrap; }
   .card-head { flex-wrap: wrap; }
   .catrow .top { flex-wrap: wrap; }
   .month-nav .lbl { min-width: 0; }
   .tbl .hide-sm { display: none; }
+  .only-sm { display: block; }
   .tbl th, .tbl td { padding-left: 8px; padding-right: 8px; }
   .filters .inp { flex: 1 1 140px; }
   .drawer-foot { flex-wrap: wrap; }

@@ -21,6 +21,10 @@ class TransactionIn(BaseModel):
     destination_name: str | None = Field(default=None, max_length=120)
     category_id: int | None = None
     budget_id: int | None = None  # expenses only; ignored for income and transfers
+    bill_id: int | None = None  # expenses only
+    # A new expense with no bill chosen is matched against the bills' words and
+    # amount range unless this is false. Edits never auto-match.
+    auto_match_bill: bool = True
     tags: list[str] = []
     notes: str | None = None
 
@@ -48,6 +52,7 @@ class TransactionOut(ORM):
     destination: AccountRef
     category: CategoryRef | None
     budget: NamedRef | None = None
+    bill: NamedRef | None = None
     tags: list[str]
     notes: str | None
 

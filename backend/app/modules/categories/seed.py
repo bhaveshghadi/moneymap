@@ -65,8 +65,35 @@ DEFAULT_CATEGORIES: list[tuple[str, str, str, str]] = [
 ]
 
 
+# Starter expense categories counted as essential spending for the emergency fund.
+ESSENTIAL_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "Rent",
+        "Housing",
+        "Society Maintenance",
+        "Utilities",
+        "Electricity",
+        "Water",
+        "Gas",
+        "Mobile & Internet",
+        "Groceries",
+        "Transport",
+        "Fuel",
+        "Health",
+        "Pharmacy",
+        "Insurance",
+        "Education & Fees",
+        "Kids & Childcare",
+        "Domestic Help",
+        "Loan / EMI",
+        "Family Support",
+        "Taxes",
+    }
+)
+
+
 def seed_categories(db: Session) -> None:
     existing = set(db.scalars(select(Category.name)))
     for name, kind, icon, color in DEFAULT_CATEGORIES:
         if name not in existing:
-            db.add(Category(name=name, kind=kind, icon=icon, color=color))
+            db.add(Category(name=name, kind=kind, icon=icon, color=color, essential=name in ESSENTIAL_CATEGORIES))

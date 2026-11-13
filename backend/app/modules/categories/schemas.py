@@ -18,6 +18,7 @@ class CategoryIn(BaseModel):
     kind: Literal["expense", "income"] = "expense"
     icon: str = Field(default="circle", max_length=48)
     color: str = "indigo"
+    essential: bool = False  # expense categories only
 
     @field_validator("color")
     @classmethod
@@ -30,6 +31,7 @@ class CategoryPatch(BaseModel):
     kind: Literal["expense", "income"] | None = None
     icon: str | None = Field(default=None, max_length=48)
     color: str | None = None
+    essential: bool | None = None
 
     @field_validator("color")
     @classmethod
@@ -43,6 +45,7 @@ class CategoryRef(ORM):
     kind: str
     icon: str
     color: str
+    essential: bool = False
 
 
 class CategoryOut(CategoryRef):

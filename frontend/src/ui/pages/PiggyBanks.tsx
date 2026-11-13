@@ -15,12 +15,15 @@ import { Icon } from '../primitives/Icon';
 import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { DrawerHead } from '../shared/DrawerHead';
 import { Progress } from '../shared/Progress';
+import { EmergencyFundCard } from '../shared/EmergencyFundCard';
 
 export function PiggyBanksPage() {
   const { data, error, reload } = useApi<Piggy[]>('/piggy-banks');
   const [editing, setEditing] = useState<{ piggy?: Piggy } | null>(null);
   const [moving, setMoving] = useState<{ piggy: Piggy; dir: 'add' | 'remove' } | null>(null);
-  const active = (data ?? []).filter((p) => p.active);
+  // The emergency fund's piggy bank has its own card at the top.
+  const goals = (data ?? []).filter((p) => !p.is_emergency);
+  const active = goals.filter((p) => p.active);
   const saved = active.reduce((s, p) => s + p.saved, 0);
   const target = active.reduce((s, p) => s + p.target_amount, 0);
 
@@ -36,6 +39,8 @@ export function PiggyBanksPage() {
         </div>
       </div>
 
+      <EmergencyFundCard onMove={(piggy, dir) => setMoving({ piggy, dir })} />
+
       {error ? (
         <div className="card"><ErrorState message={error} onRetry={reload} /></div>
       ) : !data ? (
@@ -43,12 +48,12 @@ export function PiggyBanksPage() {
           <div className="grid-3 stat-grid"><Skeleton variant="stat" count={3} /></div>
           <div className="grid-3"><Skeleton variant="block" height={190} count={3} /></div>
         </>
-      ) : data.length === 0 ? (
+      ) : goals.length === 0 ? (
         <div className="card">
           <EmptyState
             icon="piggy-bank"
             title="No piggy banks yet"
-            body="Create a goal — an emergency fund, a trip, a new phone — link it to a savings account and set money aside as you go."
+            body="Create a goal — a trip, a new phone, a wedding — link it to a savings account and set money aside as you go."
             action={{ label: 'Add piggy bank', onClick: () => setEditing({}) }}
           />
         </div>
@@ -60,7 +65,7 @@ export function PiggyBanksPage() {
             <StatCard lbl="Still to save" icon="hourglass" val={<Money amount={rs(Math.max(0, target - saved))} compact />} sub={target ? `${Math.round((saved / target) * 100)}% of the way` : undefined} />
           </div>
           <div className="grid-3">
-            {data.map((p) => (
+            {goals.map((p) => (
               <PiggyCard key={p.id} p={p} onEdit={() => setEditing({ piggy: p })} onMove={(dir) => setMoving({ piggy: p, dir })} />
             ))}
           </div>

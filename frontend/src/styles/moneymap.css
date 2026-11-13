@@ -22,6 +22,11 @@ select.inp { appearance: auto; }
 /* ---------- phone widths ---------- */
 .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .only-sm { display: none; }
+
+/* Segmented controls: make the selected option stand out (the base style is a white
+   pill on light grey, which nearly disappears inside white dialogs). */
+.seg button.on { background: var(--brand-strong); color: var(--fg-on-dark); box-shadow: var(--shadow-xs); }
+.seg button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 @media (max-width: 640px) {
   .page-head .actions { flex-wrap: wrap; }
   .card-head { flex-wrap: wrap; }

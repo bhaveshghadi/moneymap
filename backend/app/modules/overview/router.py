@@ -10,6 +10,7 @@ from ..auth.security import current_user
 from ..bills.service import upcoming
 from ..budgets.service import budgets_for_month
 from ..categories.models import Category
+from ..emergency.service import summary as emergency_summary
 from ..transactions.models import Transaction, TransactionType
 from ..transactions.service import txn_out
 from .schemas import CategorySpend, Overview
@@ -74,5 +75,6 @@ def overview(month: str | None = None, db: Session = Depends(get_db)) -> Overvie
         recent=[txn_out(t) for t in recent],
         transaction_count=db.scalar(select(func.count(Transaction.id))) or 0,
         budgets=budgets,
+        emergency=emergency_summary(db),
         upcoming_bills=upcoming(db, days=30) if label == month_bounds(None)[2] else [],
     )

@@ -54,7 +54,13 @@ def _get_cat(db: Session, cid: int) -> Category:
 
 @router.post("/categories", response_model=CategoryOut, status_code=201)
 def create_category(body: CategoryIn, db: Session = Depends(get_db)) -> CategoryOut:
-    c = Category(name=body.name.strip(), kind=body.kind, icon=body.icon, color=body.color)
+    c = Category(
+        name=body.name.strip(),
+        kind=body.kind,
+        icon=body.icon,
+        color=body.color,
+        essential=body.essential and body.kind == "expense",
+    )
     db.add(c)
     _commit_unique(db, "category")
     return CategoryOut.model_validate(c)
@@ -66,6 +72,8 @@ def update_category(cid: int, body: CategoryPatch, db: Session = Depends(get_db)
     for k, v in body.model_dump(exclude_unset=True).items():
         if v is not None:
             setattr(c, k, v.strip() if k == "name" else v)
+    if c.kind != "expense":
+        c.essential = False  # only spending can be essential
     _commit_unique(db, "category")
     return CategoryOut.model_validate(c)
 

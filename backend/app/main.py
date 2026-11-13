@@ -9,6 +9,7 @@ from .modules.auth.router import router as auth_router
 from .modules.bills.router import router as bills_router
 from .modules.budgets.router import router as budgets_router
 from .modules.categories.router import router as categories_router
+from .modules.emergency.router import router as emergency_router
 from .modules.overview.router import router as overview_router
 from .modules.piggybanks.router import router as piggybanks_router
 from .modules.reset.router import router as reset_router
@@ -34,6 +35,7 @@ for r in (
     budgets_router,
     bills_router,
     piggybanks_router,
+    emergency_router,
     reset_router,
 ):
     app.include_router(r, prefix="/api")

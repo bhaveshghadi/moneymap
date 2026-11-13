@@ -57,3 +57,4 @@ class PiggyOut(ORM):
     account_balance: int = 0
     account_available: int = 0  # the account's balance not yet set aside in any piggy bank
     monthly_needed: int | None = None  # to reach the target by the target date
+    is_emergency: bool = False  # the emergency fund's piggy bank (target set automatically)

@@ -16,6 +16,7 @@ import { CategoryGlyph, PALETTE } from '../primitives/CategoryGlyph';
 import { Icon } from '../primitives/Icon';
 import { TxnRow } from '../shared/TxnRow';
 import { BillBadge, Progress } from '../shared/Progress';
+import { EmergencyBadge, coverText } from '../shared/EmergencyFundCard';
 
 function Row({ href, glyph, title, sub, right }: { href: string; glyph: ReactNode; title: ReactNode; sub: ReactNode; right: ReactNode }) {
   return (
@@ -194,6 +195,31 @@ export function OverviewPage() {
           )}
         </SectionCard>
       </div>
+
+      {data.emergency && (
+        <div style={{ marginBottom: 16 }}>
+          <SectionCard title="Emergency fund" action={{ label: 'Open', href: '/piggy-banks' }}>
+            <div className="catrow" style={{ display: 'block' }}>
+              <div className="top">
+                <span className="nm">
+                  {coverText(data.emergency.covered_months, data.emergency.months_cover)}{' '}
+                  <EmergencyBadge status={data.emergency.status} />
+                </span>
+                <span style={{ fontSize: 13 }}>
+                  <span className="fig">
+                    <Money amount={rs(data.emergency.saved)} interactive={false} />
+                  </span>
+                  <span className="muted">
+                    {' '}
+                    of <Money amount={rs(data.emergency.target)} interactive={false} />
+                  </span>
+                </span>
+              </div>
+              <Progress value={data.emergency.saved} max={data.emergency.target} savings />
+            </div>
+          </SectionCard>
+        </div>
+      )}
 
       {data.upcoming_bills.length > 0 && (
         <div style={{ marginBottom: 16 }}>

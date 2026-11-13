@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import Boolean, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...db import Base
@@ -13,6 +13,8 @@ class Category(Base):
     kind: Mapped[str] = mapped_column(String(8), default="expense", server_default="expense")  # expense | income
     icon: Mapped[str] = mapped_column(String(48), default="circle")  # lucide icon name
     color: Mapped[str] = mapped_column(String(16), default="indigo")  # palette key
+    # Essential spending (rent, groceries, utilities …) — the emergency fund is based on it.
+    essential: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

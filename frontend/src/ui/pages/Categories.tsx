@@ -173,6 +173,7 @@ export function CategoriesPage() {
                               >
                                 <CategoryGlyph icon={c.icon} color={c.color} size={30} />
                                 {c.name}
+                                {c.essential && <span className="badge brand">Essential</span>}
                               </div>
                             </td>
                             <td className="r figure">
@@ -275,6 +276,7 @@ function CategoryFormBody({ cat }: { cat?: Category }) {
   const [kind, setKind] = useState<CategoryKind>(cat?.kind ?? 'expense');
   const [icon, setIcon] = useState(cat?.icon ?? 'circle');
   const [color, setColor] = useState(cat?.color ?? 'indigo');
+  const [essential, setEssential] = useState(cat?.essential ?? false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -283,7 +285,7 @@ function CategoryFormBody({ cat }: { cat?: Category }) {
     e.preventDefault();
     setSaving(true);
     try {
-      const body = { name, kind, icon, color };
+      const body = { name, kind, icon, color, essential: kind === 'expense' && essential };
       if (cat) await api(`/categories/${cat.id}`, { method: 'PATCH', body });
       else await api('/categories', { method: 'POST', body });
       bump();
@@ -332,6 +334,17 @@ function CategoryFormBody({ cat }: { cat?: Category }) {
             <option value="income">Income — money coming in</option>
           </select>
         </div>
+        {kind === 'expense' && (
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 14, marginBottom: 16 }}>
+            <input type="checkbox" checked={essential} onChange={(e) => setEssential(e.target.checked)} style={{ marginTop: 3 }} />
+            <span>
+              Essential spending
+              <span className="muted" style={{ display: 'block', fontSize: 12.5 }}>
+                Spending you couldn&apos;t cut in an emergency (rent, groceries, bills). The emergency fund is based on it.
+              </span>
+            </span>
+          </label>
+        )}
         <div className="field">
           <label>Colour</label>
           <div className="swatches" role="radiogroup" aria-label="Colour">

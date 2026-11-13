@@ -9,13 +9,14 @@ from ...db import get_db
 from ..accounts.models import BALANCE_TYPES, Account
 from ..accounts.service import account_out, account_stats
 from ..auth.security import current_user
+from ..emergency.models import EmergencyFund
 from .models import PiggyBank, PiggyEvent
 from .schemas import PiggyEventIn, PiggyEventOut, PiggyIn, PiggyOut, PiggyPatch
 
 router = APIRouter(prefix="/piggy-banks", tags=["piggy banks"], dependencies=[Depends(current_user)])
 
 
-def _saved_map(db: Session) -> dict[int, int]:
+def saved_map(db: Session) -> dict[int, int]:
     """piggy bank id -> amount currently saved in it."""
     return {
         pid: int(total)
@@ -51,6 +52,7 @@ def piggy_out(db: Session, p: PiggyBank, saved: dict[int, int]) -> PiggyOut:
     out.account_balance = _account_balance(db, p.account)
     out.account_available = out.account_balance - _set_aside_on(db, p.account_id, saved)
     out.monthly_needed = monthly_needed(p.target_amount, out.saved, p.target_date)
+    out.is_emergency = db.scalar(select(EmergencyFund.id).where(EmergencyFund.piggy_id == p.id)) is not None
     return out
 
 
@@ -61,7 +63,7 @@ def _get(db: Session, pid: int) -> PiggyBank:
     return p
 
 
-def _check_account(db: Session, account_id: int) -> Account:
+def check_account(db: Session, account_id: int) -> Account:
     a = db.get(Account, account_id)
     if a is None or a.type not in BALANCE_TYPES:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Choose a bank or cash account for the piggy bank")
@@ -71,21 +73,21 @@ def _check_account(db: Session, account_id: int) -> Account:
 @router.get("", response_model=list[PiggyOut])
 def list_piggies(db: Session = Depends(get_db)) -> list[PiggyOut]:
     """Active piggy banks first, each with what's saved and what the account has left."""
-    saved = _saved_map(db)
+    saved = saved_map(db)
     q = select(PiggyBank).order_by(PiggyBank.active.desc(), func.lower(PiggyBank.name))
     return [piggy_out(db, p, saved) for p in db.scalars(q)]
 
 
 @router.post("", response_model=PiggyOut, status_code=201)
 def create_piggy(body: PiggyIn, db: Session = Depends(get_db)) -> PiggyOut:
-    _check_account(db, body.account_id)
+    check_account(db, body.account_id)
     data = body.model_dump()
     data["notes"] = (body.notes or "").strip() or None
     p = PiggyBank(**data)
     db.add(p)
     db.commit()
     db.refresh(p)
-    return piggy_out(db, p, _saved_map(db))
+    return piggy_out(db, p, saved_map(db))
 
 
 @router.patch("/{pid}", response_model=PiggyOut)
@@ -93,8 +95,8 @@ def update_piggy(pid: int, body: PiggyPatch, db: Session = Depends(get_db)) -> P
     p = _get(db, pid)
     data = body.model_dump(exclude_unset=True)
     if data.get("account_id") is not None and data["account_id"] != p.account_id:
-        _check_account(db, data["account_id"])
-        saved = _saved_map(db).get(p.id, 0)
+        check_account(db, data["account_id"])
+        saved = saved_map(db).get(p.id, 0)
         if saved:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -111,7 +113,7 @@ def update_piggy(pid: int, body: PiggyPatch, db: Session = Depends(get_db)) -> P
             setattr(p, k, v)
     db.commit()
     db.refresh(p)
-    return piggy_out(db, p, _saved_map(db))
+    return piggy_out(db, p, saved_map(db))
 
 
 @router.delete("/{pid}", status_code=204)
@@ -135,7 +137,7 @@ def add_event(pid: int, body: PiggyEventIn, db: Session = Depends(get_db)) -> Pi
     p = _get(db, pid)
     if body.amount == 0:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Amount can't be zero")
-    saved = _saved_map(db)
+    saved = saved_map(db)
     current = saved.get(p.id, 0)
     if body.amount < 0 and -body.amount > current:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "You can't take out more than is saved")
@@ -149,4 +151,4 @@ def add_event(pid: int, body: PiggyEventIn, db: Session = Depends(get_db)) -> Pi
     note = (body.note or "").strip() or None
     db.add(PiggyEvent(piggy_id=p.id, date=body.date or date.today(), amount=body.amount, note=note))
     db.commit()
-    return piggy_out(db, p, _saved_map(db))
+    return piggy_out(db, p, saved_map(db))

@@ -35,6 +35,7 @@ export interface CategoryRef {
   kind: CategoryKind;
   icon: string;
   color: string;
+  essential: boolean; // counts towards the emergency fund
 }
 
 export interface Category extends CategoryRef {
@@ -119,6 +120,7 @@ export interface Overview {
   transaction_count: number;
   budgets: Budget[]; // the month's active budgets with an amount or spending
   upcoming_bills: BillDue[]; // overdue + due in the next 30 days (current month only)
+  emergency: EmergencySummary | null; // once the emergency fund is set up
 }
 
 // ---------- bills (F7)
@@ -167,6 +169,7 @@ export interface Piggy {
   account_balance: number;
   account_available: number; // the account's balance not yet set aside in any piggy bank
   monthly_needed: number | null;
+  is_emergency: boolean; // the emergency fund's piggy bank (target set automatically)
 }
 
 export interface PiggyEvent {
@@ -174,4 +177,47 @@ export interface PiggyEvent {
   date: string;
   amount: number; // + set aside, - taken out
   note: string | null;
+}
+
+// ---------- emergency fund
+
+export type EmergencyStatus = 'not_set_up' | 'no_data' | 'low' | 'building' | 'safe' | 'done';
+
+export interface EmergencyMonth {
+  month: string; // YYYY-MM
+  amount: number;
+}
+
+export interface EmergencyEstimate {
+  average_months: number;
+  monthly: number;
+  source: 'median' | 'estimate' | 'none';
+  months_of_data: number;
+}
+
+export interface Emergency {
+  configured: boolean;
+  piggy: Piggy | null;
+  months_cover: number;
+  average_months: number;
+  monthly_override: number | null;
+  monthly_essential: number; // the typical month used for the target
+  monthly_source: 'median' | 'estimate' | 'override' | 'none';
+  months_of_data: number;
+  history: EmergencyMonth[]; // oldest first
+  essential_categories: string[];
+  estimates: EmergencyEstimate[]; // typical month for each averaging window (3, 6, 12) — for live previews
+  target: number;
+  saved: number;
+  covered_months: number | null;
+  status: EmergencyStatus;
+  monthly_to_save: number | null;
+}
+
+export interface EmergencySummary {
+  target: number;
+  saved: number;
+  months_cover: number;
+  covered_months: number | null;
+  status: EmergencyStatus;
 }

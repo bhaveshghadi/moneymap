@@ -5,6 +5,7 @@ import { useApi, useShell } from '../contexts/ShellCtx';
 import { Button } from '../primitives/Button';
 import { SectionCard } from '../primitives/SectionCard';
 import { Icon } from '../primitives/Icon';
+import { ResetCard } from '../shared/ResetCard';
 
 export function SettingsPage() {
   const { username } = useShell();
@@ -93,6 +94,9 @@ export function SettingsPage() {
         </div>
       </div>
 
+      <div style={{ marginTop: 18 }}>
+        <ResetCard />
+      </div>
     </div>
   );
 }

@@ -9,6 +9,7 @@ from .modules.auth.router import router as auth_router
 from .modules.budgets.router import router as budgets_router
 from .modules.categories.router import router as categories_router
 from .modules.overview.router import router as overview_router
+from .modules.reset.router import router as reset_router
 from .modules.transactions.router import router as transactions_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  [%(name)s] %(message)s")
@@ -22,7 +23,15 @@ app = FastAPI(
 )
 
 # One line per feature. Every router except auth requires a signed-in user.
-for r in (auth_router, accounts_router, categories_router, transactions_router, overview_router, budgets_router):
+for r in (
+    auth_router,
+    accounts_router,
+    categories_router,
+    transactions_router,
+    overview_router,
+    budgets_router,
+    reset_router,
+):
     app.include_router(r, prefix="/api")
 
 

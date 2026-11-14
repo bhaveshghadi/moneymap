@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, aliased
 from ...db import get_db
 from ..accounts.models import Account
 from ..auth.security import current_user
-from ..categories.models import Tag
+from ..categories.models import Category, Tag
 from .models import Transaction, TransactionType
 from .schemas import TransactionIn, TransactionOut, TransactionPage
 from .service import apply_body, sync_inbox_status, txn_out
@@ -22,6 +22,7 @@ def _filtered(
     account_id: int | None,
     category_id: int | None,
     uncategorised: bool,
+    essential: bool | None,
     budget_id: int | None,
     no_budget: bool,
     bill_id: int | None,
@@ -38,6 +39,9 @@ def _filtered(
         q = q.where(Transaction.category_id.is_(None), Transaction.type != TransactionType.transfer.value)
     elif category_id:
         q = q.where(Transaction.category_id == category_id)
+    if essential is not None:  # spending in essential (or non-essential) expense categories
+        cats = select(Category.id).where(Category.kind == "expense", Category.essential.is_(essential))
+        q = q.where(Transaction.category_id.in_(cats), Transaction.type == TransactionType.withdrawal.value)
     if no_budget:
         q = q.where(Transaction.budget_id.is_(None), Transaction.type == TransactionType.withdrawal.value)
     elif budget_id:
@@ -76,6 +80,7 @@ def list_transactions(
     account_id: int | None = None,
     category_id: int | None = None,
     uncategorised: bool = False,
+    essential: bool | None = None,
     budget_id: int | None = None,
     no_budget: bool = False,
     bill_id: int | None = None,
@@ -93,6 +98,7 @@ def list_transactions(
         account_id=account_id,
         category_id=category_id,
         uncategorised=uncategorised,
+        essential=essential,
         budget_id=budget_id,
         no_budget=no_budget,
         bill_id=bill_id,

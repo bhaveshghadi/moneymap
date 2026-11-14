@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ...core.dates import add_months
@@ -11,10 +11,22 @@ from ..piggybanks.models import PiggyBank
 from ..piggybanks.router import monthly_needed, piggy_out, saved_map
 from ..transactions.models import Transaction, TransactionType
 from .models import EmergencyFund
-from .schemas import EmergencyEstimate, EmergencyMonth, EmergencyOut, EmergencyStatus, EmergencySummary
+from .schemas import (
+    EmergencyCategory,
+    EmergencyEstimate,
+    EmergencyMonth,
+    EmergencyOneOff,
+    EmergencyOut,
+    EmergencyStatus,
+    EmergencySummary,
+)
 
 MIN_MONTHS_FOR_MEDIAN = 3  # with fewer complete months the amount is shown as an estimate
 AVERAGE_CHOICES = (3, 6, 12)
+ONE_OFF_SHARE = 20  # % of a month's essential spending one payment must reach to be flagged
+ONE_OFF_SIMILAR = 0.2  # a payment within +-20% in the same category in another month = it recurs
+ONE_OFF_LOOKBACK = 12  # months searched (each way) for that recurring payment
+MAX_ONE_OFFS = 5
 
 
 def get_config(db: Session) -> EmergencyFund | None:
@@ -63,6 +75,99 @@ def essential_history(db: Session, average_months: int, today: date | None = Non
         out.append(EmergencyMonth(month=label, amount=int(sums.get(label) or 0)))
         m = add_months(m, 1, 1)
     return out
+
+
+def _window(history: list[EmergencyMonth]) -> tuple[date, date] | None:
+    """[first day of the oldest month, first day after the newest month) of a history run."""
+    if not history:
+        return None
+    start = date.fromisoformat(history[0].month + "-01")
+    return start, add_months(date.fromisoformat(history[-1].month + "-01"), 1, 1)
+
+
+def breakdown(db: Session, history: list[EmergencyMonth]) -> list[EmergencyCategory]:
+    """Each essential category's spending over the months in `history`, biggest first."""
+    w = _window(history)
+    if w is None:
+        return []
+    rows = db.execute(
+        select(Category, func.sum(Transaction.amount))
+        .join(Transaction, Transaction.category_id == Category.id)
+        .where(
+            Transaction.type == TransactionType.withdrawal.value,
+            Category.essential.is_(True),
+            Transaction.date >= w[0],
+            Transaction.date < w[1],
+        )
+        .group_by(Category.id)
+    ).all()
+    grand = sum(int(t or 0) for _, t in rows)
+    out = [
+        EmergencyCategory(
+            category_id=c.id,
+            name=c.name,
+            icon=c.icon,
+            color=c.color,
+            total=int(t),
+            per_month=round(int(t) / len(history)),
+            share=round(int(t) * 100 / grand, 1) if grand else 0.0,
+        )
+        for c, t in rows
+        if t
+    ]
+    return sorted(out, key=lambda x: (-x.total, x.name.lower()))
+
+
+def one_offs(db: Session, history: list[EmergencyMonth]) -> list[EmergencyOneOff]:
+    """Single essential payments that make up a big part of their month (>= ONE_OFF_SHARE %)
+    with no similar payment in the same category in another month - e.g. a land purchase
+    filed under Housing, or a loan prepayment under Loan / EMI. Rent and EMIs that repeat
+    every month are not flagged once there is more than one month of data."""
+    w = _window(history)
+    if w is None:
+        return []
+    month_total = {h.month: h.amount for h in history}
+    candidates = db.execute(
+        select(Transaction, Category)
+        .join(Category, Transaction.category_id == Category.id)
+        .where(
+            Transaction.type == TransactionType.withdrawal.value,
+            Category.essential.is_(True),
+            Transaction.date >= w[0],
+            Transaction.date < w[1],
+        )
+    ).all()
+    out = []
+    for t, c in candidates:
+        total = month_total.get(t.date.strftime("%Y-%m")) or 0
+        if total <= 0 or t.amount * 100 < total * ONE_OFF_SHARE:
+            continue
+        lo, hi = int(t.amount * (1 - ONE_OFF_SIMILAR)), int(t.amount * (1 + ONE_OFF_SIMILAR))
+        month = t.date.replace(day=1)
+        recurs = db.scalar(
+            select(func.count(Transaction.id)).where(
+                Transaction.type == TransactionType.withdrawal.value,
+                Transaction.category_id == c.id,
+                Transaction.amount.between(lo, hi),
+                Transaction.date >= add_months(month, -ONE_OFF_LOOKBACK),
+                Transaction.date < add_months(month, ONE_OFF_LOOKBACK + 1),
+                or_(Transaction.date < month, Transaction.date >= add_months(month, 1, 1)),
+            )
+        )
+        if recurs:
+            continue
+        out.append(
+            EmergencyOneOff(
+                transaction_id=t.id,
+                date=t.date.isoformat(),
+                description=t.description,
+                category=c.name,
+                amount=t.amount,
+                share=round(t.amount * 100 / total, 1),
+            )
+        )
+    out.sort(key=lambda x: (-x.amount, x.date))
+    return out[:MAX_ONE_OFFS]
 
 
 def typical_month(history: list[EmergencyMonth]) -> tuple[int, str]:
@@ -131,6 +236,8 @@ def compute(db: Session, today: date | None = None) -> EmergencyOut:
         months_of_data=len(history),
         history=history,
         essential_categories=essentials,
+        breakdown=breakdown(db, history),
+        one_offs=one_offs(db, history),
         estimates=estimates(db, today),
         target=target,
         saved=saved,

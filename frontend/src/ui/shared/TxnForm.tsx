@@ -94,6 +94,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&include_inactive=false');
   const counterparties = useApi<Account[]>('/accounts?type=expense&type=revenue');
   const categories = useApi<Category[]>('/categories');
+  const selectedCat = (categories.data ?? []).find((c) => String(c.id) === f.categoryId);
   const tags = useApi<Tag[]>('/tags');
   const budgets = useApi<BudgetMonth>(`/budgets?month=${f.date.slice(0, 7)}`);
   const bills = useApi<Bill[]>('/bills');
@@ -244,11 +245,26 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
 
         {f.type !== 'transfer' && (
           <div className="field">
-            <label htmlFor="tx-cat">Category</label>
+            <label htmlFor="tx-cat" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              Category
+              {selectedCat?.kind === 'expense' && (
+                <span className={`badge ${selectedCat.essential ? 'mint' : 'neutral'}`} title="Essential spending counts towards the emergency fund">
+                  {selectedCat.essential ? 'Essential' : 'Not essential'}
+                </span>
+              )}
+            </label>
             <select id="tx-cat" className="inp" value={f.categoryId} onChange={(e) => set('categoryId', e.target.value)}>
               <option value="">Uncategorised</option>
-              <CategoryOptions categories={categories.data ?? []} kind={kindFor(f.type)} keep={f.categoryId} />
+              <CategoryOptions categories={categories.data ?? []} kind={kindFor(f.type)} keep={f.categoryId} markEssential />
             </select>
+            {selectedCat?.kind === 'expense' && f.type === 'withdrawal' && (
+              <div className="hint">
+                {selectedCat.essential
+                  ? 'Counts towards your emergency fund target.'
+                  : 'Not counted in your emergency fund target.'}{' '}
+                Change it on Categories.
+              </div>
+            )}
           </div>
         )}
         {f.type === 'withdrawal' && (

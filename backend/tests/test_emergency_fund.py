@@ -202,3 +202,50 @@ def test_migration_marks_existing_starter_categories():
         db = sqlite3.connect(Path(d) / "moneymap.db")
         assert dict(db.execute("SELECT name, essential FROM category").fetchall()) == {"Rent": 1, "Dining": 0, "Taxes": 0}
         db.close()
+
+
+# ---------------------------------------------------------------- breakdown, one-offs, filter
+
+
+def test_breakdown_by_category(client, bank):
+    rent, food, dining = cat_id(client, "Rent"), cat_id(client, "Groceries"), cat_id(client, "Dining")
+    for n_back in (3, 2, 1):
+        spend(client, bank, 3_000_000, category_id=rent, date=month_day(n_back, 5))
+        spend(client, bank, 1_000_000, category_id=food, date=month_day(n_back, 12))
+        spend(client, bank, 900_000, category_id=dining, date=month_day(n_back, 20))  # not essential
+    e = _setup(client, bank, average_months=3)
+    rows = [(b["name"], b["total"], b["per_month"], b["share"]) for b in e["breakdown"]]
+    assert rows == [("Rent", 9_000_000, 3_000_000, 75.0), ("Groceries", 3_000_000, 1_000_000, 25.0)]
+
+
+def test_one_off_payments_are_flagged_but_monthly_rent_is_not(client, bank):
+    rent, emi, food = cat_id(client, "Rent"), cat_id(client, "Loan / EMI"), cat_id(client, "Groceries")
+    for n_back in (3, 2, 1):
+        spend(client, bank, 2_000_000, category_id=rent, date=month_day(n_back, 5), desc="Rent")  # 20k every month
+        spend(client, bank, 500_000, category_id=food, date=month_day(n_back, 12))
+    spend(client, bank, 25_000_000, category_id=emi, date=month_day(2, 19), desc="Loan prepayment")  # 2.5 lakh once
+    spend(client, bank, 100_000, category_id=food, date=month_day(1, 15))  # small: never flagged
+    e = _setup(client, bank, average_months=3)
+    assert [(o["description"], o["category"], o["amount"]) for o in e["one_offs"]] == [
+        ("Loan prepayment", "Loan / EMI", 25_000_000)
+    ]
+    assert e["one_offs"][0]["share"] == round(25_000_000 * 100 / 27_500_000, 1)
+
+
+def test_single_month_flags_big_payments(client, bank):
+    housing = cat_id(client, "Rent")
+    spend(client, bank, 25_000_000, category_id=housing, date=month_day(1, 25), desc="Land purchase")
+    spend(client, bank, 500_000, category_id=cat_id(client, "Groceries"), date=month_day(1, 3))
+    e = _setup(client, bank)
+    assert [o["description"] for o in e["one_offs"]] == ["Land purchase"]
+
+
+def test_filter_transactions_by_essential(client, bank):
+    rent, dining = cat_id(client, "Rent"), cat_id(client, "Dining")
+    spend(client, bank, 2_000_000, category_id=rent, desc="Rent")
+    spend(client, bank, 50_000, category_id=dining, desc="Pizza")
+    spend(client, bank, 10_000, desc="No category")
+    ess = client.get("/api/transactions", params={"essential": "true"}).json()
+    non = client.get("/api/transactions", params={"essential": "false"}).json()
+    assert [t["description"] for t in ess["items"]] == ["Rent"] and ess["sum_out"] == 2_000_000
+    assert [t["description"] for t in non["items"]] == ["Pizza"]

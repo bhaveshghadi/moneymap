@@ -492,7 +492,7 @@ function Row({
             }
           >
             <option value="">Choose a category…</option>
-            <CategoryOptions categories={categories} kind={kindFor(r.kind)} keep={r.category_id} />
+            <CategoryOptions categories={categories} kind={kindFor(r.kind)} keep={r.category_id} markEssential />
             <option value="__none">— Leave uncategorised —</option>
           </select>
         )}

@@ -189,6 +189,25 @@ export interface EmergencyMonth {
   amount: number;
 }
 
+export interface EmergencyCategory {
+  category_id: number;
+  name: string;
+  icon: string;
+  color: string;
+  total: number; // over the months used
+  per_month: number;
+  share: number; // % of essential spending in those months
+}
+
+export interface EmergencyOneOff {
+  transaction_id: number;
+  date: string;
+  description: string;
+  category: string;
+  amount: number;
+  share: number; // % of its month's essential spending
+}
+
 export interface EmergencyEstimate {
   average_months: number;
   monthly: number;
@@ -207,6 +226,8 @@ export interface Emergency {
   months_of_data: number;
   history: EmergencyMonth[]; // oldest first
   essential_categories: string[];
+  breakdown: EmergencyCategory[]; // biggest first, over the months in history
+  one_offs: EmergencyOneOff[]; // single big payments that skew their month, biggest first
   estimates: EmergencyEstimate[]; // typical month for each averaging window (3, 6, 12) — for live previews
   target: number;
   saved: number;

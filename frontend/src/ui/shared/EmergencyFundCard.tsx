@@ -3,8 +3,10 @@ import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '../lib/api';
 import { useApi, useShell } from '../contexts/ShellCtx';
-import type { Account, Emergency, EmergencyStatus, Piggy } from '../lib/types';
-import { inr, monthLabel, paiseToInput, rs, toPaise } from '../lib/format';
+import { useTxn } from '../contexts/TxnCtx';
+import { CategoryGlyph } from '../primitives/CategoryGlyph';
+import type { Account, Emergency, EmergencyStatus, Piggy, Txn } from '../lib/types';
+import { fmtDate, inr, monthLabel, monthRange, paiseToInput, rs, toPaise } from '../lib/format';
 import { useMask } from '../contexts/MaskCtx';
 import { Button } from '../primitives/Button';
 import { Money } from '../primitives/Money';
@@ -60,6 +62,14 @@ export function EmergencyFundCard({ onMove }: { onMove: (piggy: Piggy, dir: 'add
   const { data, error, reload } = useApi<Emergency>('/emergency-fund');
   const [settings, setSettings] = useState(false);
   const [showHow, setShowHow] = useState(false);
+  const { openTxn } = useTxn();
+  const openOneOff = async (id: number) => {
+    try {
+      openTxn(await api<Txn>(`/transactions/${id}`));
+    } catch {
+      /* deleted meanwhile — the card reloads on the next change */
+    }
+  };
 
   if (error) return <div className="card" style={{ marginBottom: 18 }}><ErrorState message={error} onRetry={reload} /></div>;
   if (!data) return <div style={{ marginBottom: 18 }}><Skeleton variant="block" height={150} /></div>;
@@ -106,6 +116,18 @@ export function EmergencyFundCard({ onMove }: { onMove: (piggy: Piggy, dir: 'add
         ? 'no essential spending recorded yet'
         : `typical month over the last ${data.months_of_data} month${data.months_of_data === 1 ? '' : 's'}${data.monthly_source === 'estimate' ? ' (estimate — little history)' : ''}`;
   const maxMonth = Math.max(1, ...data.history.map((h) => h.amount));
+  // The months behind the typical month, as a transactions filter.
+  const range =
+    data.history.length > 0
+      ? `from=${monthRange(data.history[0].month).from}&to=${monthRange(data.history[data.history.length - 1].month).to}`
+      : '';
+  const period =
+    data.history.length === 0
+      ? ''
+      : data.history.length === 1
+        ? monthLabel(data.history[0].month)
+        : `${monthLabel(data.history[0].month)} – ${monthLabel(data.history[data.history.length - 1].month)}`;
+  const showOneOffs = data.one_offs.length > 0 && data.monthly_source !== 'override';
 
   return (
     <div className="card card-pad" style={{ marginBottom: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -131,6 +153,38 @@ export function EmergencyFundCard({ onMove }: { onMove: (piggy: Piggy, dir: 'add
           <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
             Target = {coverLabel(data.months_cover)} × <Money amount={rs(data.monthly_essential)} interactive={false} /> ({typical})
             {data.monthly_to_save ? <> · save <Money amount={rs(data.monthly_to_save)} interactive={false} />/month to reach it by the target date</> : null}
+          </div>
+        </div>
+      )}
+
+      {showOneOffs && (
+        <div className="note warn" role="note">
+          <Icon name="triangle-alert" size={15} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, flex: 1 }}>
+            <span>
+              {data.one_offs.length === 1 ? 'This payment looks' : 'These payments look'}{' '}
+              like a one-off, not a normal month&apos;s cost — {data.one_offs.length === 1 ? 'it pushes' : 'they push'} the typical month up:
+            </span>
+            {data.one_offs.map((o) => (
+              <button
+                key={o.transaction_id}
+                type="button"
+                className="linkish"
+                onClick={() => openOneOff(o.transaction_id)}
+                style={{ all: 'unset', cursor: 'pointer', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}
+                aria-label={`Open ${o.description}`}
+              >
+                <b className="fig"><Money amount={rs(o.amount)} interactive={false} /></b>
+                <span style={{ textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>{o.description}</span>
+                <span style={{ opacity: 0.85 }}>
+                  {o.category} · {fmtDate(o.date)} · {Math.round(o.share)}% of {monthLabel(o.date.slice(0, 7))}
+                </span>
+              </button>
+            ))}
+            <span>
+              If it isn&apos;t a living cost (a purchase, a loan prepayment …), move it to a non-essential category — or set the
+              monthly amount yourself in the settings. <Link href={`/transactions?essential=1&${range}`}>See all essential spending</Link>
+            </span>
           </div>
         </div>
       )}
@@ -164,6 +218,34 @@ export function EmergencyFundCard({ onMove }: { onMove: (piggy: Piggy, dir: 'add
             </div>
           ) : (
             <div className="muted" style={{ fontSize: 13 }}>No complete months of history yet.</div>
+          )}
+          {data.breakdown.length > 0 && (
+            <div>
+              <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>
+                Where it goes ({period}) — per month on average:
+              </div>
+              {data.breakdown.map((b) => (
+                <Link
+                  key={b.category_id}
+                  href={`/transactions?category=${b.category_id}&${range}`}
+                  style={{ display: 'grid', gridTemplateColumns: '22px minmax(80px, 150px) 1fr auto', gap: 10, alignItems: 'center', fontSize: 13, marginBottom: 6, color: 'inherit', textDecoration: 'none' }}
+                  title={`See ${b.name} transactions`}
+                >
+                  <CategoryGlyph icon={b.icon} color={b.color} size={22} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
+                  <div className="track" style={{ height: 6, borderRadius: 999, background: 'var(--bg-sunken)', overflow: 'hidden' }}>
+                    <i style={{ display: 'block', height: '100%', width: `${b.share}%`, background: 'var(--indigo-500)' }} />
+                  </div>
+                  <span style={{ textAlign: 'right' }}>
+                    <span className="fig"><Money amount={rs(b.per_month)} interactive={false} /></span>
+                    <span className="muted" style={{ fontSize: 12 }}> · {Math.round(b.share)}%</span>
+                  </span>
+                </Link>
+              ))}
+              <div style={{ fontSize: 12.5 }}>
+                <Link href={`/transactions?essential=1&${range}`}>See these transactions</Link>
+              </div>
+            </div>
           )}
           <div className="muted" style={{ fontSize: 12.5 }}>
             Essential categories ({data.essential_categories.length}): {data.essential_categories.join(', ') || 'none'} ·{' '}

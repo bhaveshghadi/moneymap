@@ -1,0 +1,826 @@
+{
+  "pack_id": "in",
+  "country": "IN",
+  "version": "2026.05.29",
+  "coverage": "provider_statement_query_seed",
+  "retrieved_at": "2026-05-29",
+  "notes": "Templates are fragments. Runtime query builder adds fiscal-year date windows and profile identifiers. Loan-statement templates (doc_type loan_statement) and transaction-alert templates (doc_type transaction_alert) added for MoneyMap: bank domain + debit/credit words, no PDF; best-effort, not verified against every bank's wording.",
+  "templates": [
+    {
+      "id": "hdfc-bank-account-statement",
+      "provider_id": "hdfc-bank",
+      "doc_type": "bank_statement",
+      "sender_hints": [
+        "hdfcbank.net",
+        "hdfcbank.com"
+      ],
+      "subject_hints": [
+        "statement",
+        "account statement",
+        "e-statement"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "(from:hdfcbank.net OR from:hdfcbank.com)",
+        "(statement OR e-statement)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "dob-ddmmyyyy",
+        "customer-id",
+        "account-last4"
+      ]
+    },
+    {
+      "id": "icici-bank-account-statement",
+      "provider_id": "icici-bank",
+      "doc_type": "bank_statement",
+      "sender_hints": [
+        "icicibank.com",
+        "icici.bank.in"
+      ],
+      "subject_hints": [
+        "statement",
+        "savings account statement",
+        "bank statement"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:(icicibank.com OR icici.bank.in)",
+        "(statement OR e-statement)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "dob-ddmmyyyy",
+        "pan-lower",
+        "account-last4"
+      ]
+    },
+    {
+      "id": "axis-bank-account-statement",
+      "provider_id": "axis-bank",
+      "doc_type": "bank_statement",
+      "sender_hints": [
+        "axisbank.com"
+      ],
+      "subject_hints": [
+        "statement",
+        "account statement",
+        "monthly statement"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:axisbank.com",
+        "(statement OR e-statement)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "dob-ddmmyyyy",
+        "customer-id",
+        "account-last4"
+      ]
+    },
+    {
+      "id": "sbi-bank-account-statement",
+      "provider_id": "state-bank-of-india",
+      "doc_type": "bank_statement",
+      "sender_hints": [
+        "sbi.co.in",
+        "onlinesbi.com"
+      ],
+      "subject_hints": [
+        "statement",
+        "account statement",
+        "sbi statement"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "(from:sbi.co.in OR from:onlinesbi.com)",
+        "(statement OR e-statement)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "dob-ddmmyyyy",
+        "account-last4"
+      ]
+    },
+    {
+      "id": "kotak-bank-account-statement",
+      "provider_id": "kotak-mahindra-bank",
+      "doc_type": "bank_statement",
+      "sender_hints": [
+        "kotak.com"
+      ],
+      "subject_hints": [
+        "statement",
+        "account statement",
+        "kotak statement"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:kotak.com",
+        "(statement OR e-statement)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "crn",
+        "dob-ddmmyyyy",
+        "account-last4"
+      ]
+    },
+    {
+      "id": "idfc-first-bank-account-statement",
+      "provider_id": "idfc-first-bank",
+      "doc_type": "bank_statement",
+      "sender_hints": [
+        "idfcfirstbank.com"
+      ],
+      "subject_hints": [
+        "statement",
+        "account statement",
+        "idfc first"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:idfcfirstbank.com",
+        "(statement OR e-statement)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "dob-ddmmyyyy",
+        "mobile-last4",
+        "account-last4"
+      ]
+    },
+    {
+      "id": "hdfc-credit-card-statement",
+      "provider_id": "hdfc-bank-cards",
+      "doc_type": "credit_card_statement",
+      "sender_hints": [
+        "hdfcbank.net",
+        "hdfcbank.com"
+      ],
+      "subject_hints": [
+        "credit card statement",
+        "card statement",
+        "statement for your credit card"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "(from:hdfcbank.net OR from:hdfcbank.com)",
+        "\"credit card statement\""
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "card-last4",
+        "dob-ddmmyyyy",
+        "pan-lower"
+      ]
+    },
+    {
+      "id": "sbi-card-statement",
+      "provider_id": "sbi-card",
+      "doc_type": "credit_card_statement",
+      "sender_hints": [
+        "sbicard.com"
+      ],
+      "subject_hints": [
+        "sbi card statement",
+        "credit card statement",
+        "monthly statement"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:sbicard.com",
+        "(statement OR e-statement)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "card-last4",
+        "dob-ddmmyyyy",
+        "mobile-last4"
+      ]
+    },
+    {
+      "id": "icici-credit-card-statement",
+      "provider_id": "icici-bank-cards",
+      "doc_type": "credit_card_statement",
+      "sender_hints": [
+        "icicibank.com",
+        "icici.bank.in"
+      ],
+      "subject_hints": [
+        "credit card statement",
+        "card statement",
+        "icici bank credit card"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:(icicibank.com OR icici.bank.in)",
+        "\"credit card statement\""
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "card-last4",
+        "dob-ddmmyyyy",
+        "pan-lower"
+      ]
+    },
+    {
+      "id": "axis-credit-card-statement",
+      "provider_id": "axis-bank-cards",
+      "doc_type": "credit_card_statement",
+      "sender_hints": [
+        "axisbank.com"
+      ],
+      "subject_hints": [
+        "credit card statement",
+        "card statement",
+        "axis bank credit card"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:axisbank.com",
+        "\"credit card statement\""
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "card-last4",
+        "dob-ddmmyyyy",
+        "pan-lower"
+      ]
+    },
+    {
+      "id": "amex-credit-card-statement",
+      "provider_id": "american-express-india-cards",
+      "doc_type": "credit_card_statement",
+      "sender_hints": [
+        "americanexpress.com",
+        "aexp.com"
+      ],
+      "subject_hints": [
+        "statement",
+        "american express statement",
+        "card statement"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "(from:americanexpress.com OR from:aexp.com)",
+        "(statement OR e-statement)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "card-last4",
+        "dob-ddmmyyyy"
+      ]
+    },
+    {
+      "id": "indusind-credit-card-statement",
+      "provider_id": "indusind-bank-cards",
+      "doc_type": "credit_card_statement",
+      "sender_hints": [
+        "indusind.com"
+      ],
+      "subject_hints": [
+        "credit card statement",
+        "monthly statement",
+        "card statement"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:indusind.com",
+        "\"credit card statement\""
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "card-last4",
+        "dob-ddmmyyyy",
+        "mobile-last4"
+      ]
+    },
+    {
+      "id": "bob-card-statement",
+      "provider_id": "bank-of-baroda-cards",
+      "doc_type": "credit_card_statement",
+      "sender_hints": [
+        "bobcard.co.in",
+        "bankofbaroda.com"
+      ],
+      "subject_hints": [
+        "credit card statement",
+        "bobcard statement",
+        "card statement"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "(from:bobcard.co.in OR from:bankofbaroda.com)",
+        "(statement OR e-statement)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "card-last4",
+        "dob-ddmmyyyy",
+        "mobile-last4"
+      ]
+    },
+    {
+      "id": "yes-credit-card-statement",
+      "provider_id": "yes-bank-cards",
+      "doc_type": "credit_card_statement",
+      "sender_hints": [
+        "yesbank.in"
+      ],
+      "subject_hints": [
+        "credit card statement",
+        "yes bank credit card",
+        "card statement"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:yesbank.in",
+        "\"credit card statement\""
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "card-last4",
+        "dob-ddmmyyyy",
+        "mobile-last4"
+      ]
+    },
+    {
+      "id": "hdfc-bank-loan-statement",
+      "provider_id": "hdfc-bank",
+      "doc_type": "loan_statement",
+      "sender_hints": [],
+      "subject_hints": [
+        "loan statement",
+        "loan account statement",
+        "repayment schedule"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "(from:hdfcbank.net OR from:hdfcbank.com)",
+        "(\"loan statement\" OR \"loan account statement\" OR \"statement of account\" OR \"repayment schedule\")"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ]
+    },
+    {
+      "id": "icici-bank-loan-statement",
+      "provider_id": "icici-bank",
+      "doc_type": "loan_statement",
+      "sender_hints": [],
+      "subject_hints": [
+        "loan statement",
+        "loan account statement",
+        "repayment schedule"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:(icicibank.com OR icici.bank.in)",
+        "(\"loan statement\" OR \"loan account statement\" OR \"statement of account\" OR \"repayment schedule\")"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ]
+    },
+    {
+      "id": "state-bank-of-india-loan-statement",
+      "provider_id": "state-bank-of-india",
+      "doc_type": "loan_statement",
+      "sender_hints": [],
+      "subject_hints": [
+        "loan statement",
+        "loan account statement",
+        "repayment schedule"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "(from:sbi.co.in OR from:onlinesbi.com)",
+        "(\"loan statement\" OR \"loan account statement\" OR \"statement of account\" OR \"repayment schedule\")"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ]
+    },
+    {
+      "id": "axis-bank-loan-statement",
+      "provider_id": "axis-bank",
+      "doc_type": "loan_statement",
+      "sender_hints": [],
+      "subject_hints": [
+        "loan statement",
+        "loan account statement",
+        "repayment schedule"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:axisbank.com",
+        "(\"loan statement\" OR \"loan account statement\" OR \"statement of account\" OR \"repayment schedule\")"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ]
+    },
+    {
+      "id": "kotak-mahindra-bank-loan-statement",
+      "provider_id": "kotak-mahindra-bank",
+      "doc_type": "loan_statement",
+      "sender_hints": [],
+      "subject_hints": [
+        "loan statement",
+        "loan account statement",
+        "repayment schedule"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:kotak.com",
+        "(\"loan statement\" OR \"loan account statement\" OR \"statement of account\" OR \"repayment schedule\")"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ]
+    },
+    {
+      "id": "idfc-first-bank-loan-statement",
+      "provider_id": "idfc-first-bank",
+      "doc_type": "loan_statement",
+      "sender_hints": [],
+      "subject_hints": [
+        "loan statement",
+        "loan account statement",
+        "repayment schedule"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:idfcfirstbank.com",
+        "(\"loan statement\" OR \"loan account statement\" OR \"statement of account\" OR \"repayment schedule\")"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ]
+    },
+    {
+      "id": "bajaj-finance-loan-statement",
+      "provider_id": "bajaj-finance",
+      "doc_type": "loan_statement",
+      "sender_hints": [],
+      "subject_hints": [
+        "loan statement",
+        "loan account statement",
+        "repayment schedule"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "(from:bajajfinserv.in OR from:bajajfinance.in)",
+        "(\"loan statement\" OR \"loan account statement\" OR \"statement of account\" OR \"repayment schedule\")"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "name": "Bajaj Finance"
+    },
+    {
+      "id": "lic-housing-finance-loan-statement",
+      "provider_id": "lic-housing-finance",
+      "doc_type": "loan_statement",
+      "sender_hints": [],
+      "subject_hints": [
+        "loan statement",
+        "loan account statement",
+        "repayment schedule"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:lichousing.com",
+        "(\"loan statement\" OR \"loan account statement\" OR \"statement of account\" OR \"repayment schedule\")"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "name": "LIC Housing Finance"
+    },
+    {
+      "id": "tata-capital-loan-statement",
+      "provider_id": "tata-capital",
+      "doc_type": "loan_statement",
+      "sender_hints": [],
+      "subject_hints": [
+        "loan statement",
+        "loan account statement",
+        "repayment schedule"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:tatacapital.com",
+        "(\"loan statement\" OR \"loan account statement\" OR \"statement of account\" OR \"repayment schedule\")"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "name": "Tata Capital"
+    },
+    {
+      "id": "cams-cas",
+      "provider_id": "cams",
+      "doc_type": "mf_statement",
+      "sender_hints": [
+        "camsonline.com"
+      ],
+      "subject_hints": [
+        "consolidated account statement",
+        "cas"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:camsonline.com",
+        "(\"consolidated account statement\" OR CAS)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "user-chosen"
+      ]
+    },
+    {
+      "id": "kfintech-cas",
+      "provider_id": "kfintech",
+      "doc_type": "mf_statement",
+      "sender_hints": [
+        "kfintech.com"
+      ],
+      "subject_hints": [
+        "consolidated account statement",
+        "cas"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "has:attachment",
+        "filename:pdf",
+        "from:kfintech.com",
+        "(\"consolidated account statement\" OR CAS)"
+      ],
+      "attachment_mime_hints": [
+        "application/pdf"
+      ],
+      "password_rule_tags": [
+        "user-chosen"
+      ]
+    },
+    {
+      "id": "hdfc-bank-transaction-alerts",
+      "provider_id": "hdfc-bank",
+      "doc_type": "transaction_alert",
+      "sender_hints": [],
+      "subject_hints": [
+        "debited",
+        "credited",
+        "transaction alert"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "-filename:pdf",
+        "(from:hdfcbank.net OR from:hdfcbank.com)",
+        "(debited OR credited OR spent OR \"transaction alert\" OR \"has been used\" OR UPI)"
+      ],
+      "attachment_mime_hints": []
+    },
+    {
+      "id": "icici-bank-transaction-alerts",
+      "provider_id": "icici-bank",
+      "doc_type": "transaction_alert",
+      "sender_hints": [],
+      "subject_hints": [
+        "debited",
+        "credited",
+        "transaction alert"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "-filename:pdf",
+        "from:(icicibank.com OR icici.bank.in)",
+        "(debited OR credited OR spent OR \"transaction alert\" OR \"has been used\" OR UPI)"
+      ],
+      "attachment_mime_hints": []
+    },
+    {
+      "id": "axis-bank-transaction-alerts",
+      "provider_id": "axis-bank",
+      "doc_type": "transaction_alert",
+      "sender_hints": [],
+      "subject_hints": [
+        "debited",
+        "credited",
+        "transaction alert"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "-filename:pdf",
+        "from:axisbank.com",
+        "(debited OR credited OR spent OR \"transaction alert\" OR \"has been used\" OR UPI)"
+      ],
+      "attachment_mime_hints": []
+    },
+    {
+      "id": "state-bank-of-india-transaction-alerts",
+      "provider_id": "state-bank-of-india",
+      "doc_type": "transaction_alert",
+      "sender_hints": [],
+      "subject_hints": [
+        "debited",
+        "credited",
+        "transaction alert"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "-filename:pdf",
+        "(from:sbi.co.in OR from:onlinesbi.com)",
+        "(debited OR credited OR spent OR \"transaction alert\" OR \"has been used\" OR UPI)"
+      ],
+      "attachment_mime_hints": []
+    },
+    {
+      "id": "kotak-mahindra-bank-transaction-alerts",
+      "provider_id": "kotak-mahindra-bank",
+      "doc_type": "transaction_alert",
+      "sender_hints": [],
+      "subject_hints": [
+        "debited",
+        "credited",
+        "transaction alert"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "-filename:pdf",
+        "from:kotak.com",
+        "(debited OR credited OR spent OR \"transaction alert\" OR \"has been used\" OR UPI)"
+      ],
+      "attachment_mime_hints": []
+    },
+    {
+      "id": "idfc-first-bank-transaction-alerts",
+      "provider_id": "idfc-first-bank",
+      "doc_type": "transaction_alert",
+      "sender_hints": [],
+      "subject_hints": [
+        "debited",
+        "credited",
+        "transaction alert"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "-filename:pdf",
+        "from:idfcfirstbank.com",
+        "(debited OR credited OR spent OR \"transaction alert\" OR \"has been used\" OR UPI)"
+      ],
+      "attachment_mime_hints": []
+    },
+    {
+      "id": "sbi-card-transaction-alerts",
+      "provider_id": "sbi-card",
+      "doc_type": "transaction_alert",
+      "sender_hints": [],
+      "subject_hints": [
+        "debited",
+        "credited",
+        "transaction alert"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "-filename:pdf",
+        "from:sbicard.com",
+        "(debited OR credited OR spent OR \"transaction alert\" OR \"has been used\" OR UPI)"
+      ],
+      "attachment_mime_hints": []
+    },
+    {
+      "id": "american-express-india-cards-transaction-alerts",
+      "provider_id": "american-express-india-cards",
+      "doc_type": "transaction_alert",
+      "sender_hints": [],
+      "subject_hints": [
+        "debited",
+        "credited",
+        "transaction alert"
+      ],
+      "query_fragments": [
+        "-in:spam",
+        "-in:trash",
+        "-filename:pdf",
+        "(from:americanexpress.com OR from:aexp.com)",
+        "(debited OR credited OR spent OR \"transaction alert\" OR \"has been used\" OR UPI)"
+      ],
+      "attachment_mime_hints": []
+    }
+  ]
+}

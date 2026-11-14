@@ -4,6 +4,7 @@ import type { Txn } from '../lib/types';
 import { ACCOUNT_TYPE_LABEL, fmtDate } from '../lib/format';
 import { Dialog } from '../primitives/Dialog';
 import { Button } from '../primitives/Button';
+import { Icon } from '../primitives/Icon';
 import { DrawerHead } from './DrawerHead';
 import { TxnAmount, TxnGlyph } from './TxnRow';
 
@@ -95,6 +96,24 @@ export function TxnDrawer({ txn: t, onClose, onEdit }: { txn: Txn; onClose: () =
             <span className="v">{fmtDate(t.date)}</span>
           </div>
         </div>
+        {t.gmail && (
+          <div style={{ marginTop: 18 }}>
+            <div className="sb-section" style={{ padding: '0 0 8px' }}>Source email</div>
+            <div className="doc">
+              <div className="doc-bar">
+                <Icon name="mail" size={15} color="var(--red-500)" />
+                <span>Gmail</span>
+                <Link href={`/inbox?open=${encodeURIComponent(t.gmail.id)}`} className="prov" style={{ marginLeft: 'auto' }} onClick={onClose}>
+                  Open in Inbox <Icon name="arrow-right" size={12} />
+                </Link>
+              </div>
+              <div className="doc-meta">
+                <div className="from">{t.gmail.from_addr}</div>
+                <div className="subj">{t.gmail.subject}</div>
+              </div>
+            </div>
+          </div>
+        )}
         {t.notes && (
           <div className="note info" style={{ marginTop: 16, whiteSpace: 'pre-wrap' }}>
             {t.notes}

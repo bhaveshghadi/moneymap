@@ -90,6 +90,7 @@ export interface Txn {
   category: CategoryRef | null;
   budget: NamedRef | null;
   bill: NamedRef | null;
+  gmail: GmailRef | null; // the Inbox email it was recorded from
   tags: string[];
   notes: string | null;
 }
@@ -188,6 +189,25 @@ export interface EmergencyMonth {
   amount: number;
 }
 
+export interface EmergencyCategory {
+  category_id: number;
+  name: string;
+  icon: string;
+  color: string;
+  total: number; // over the months used
+  per_month: number;
+  share: number; // % of essential spending in those months
+}
+
+export interface EmergencyOneOff {
+  transaction_id: number;
+  date: string;
+  description: string;
+  category: string;
+  amount: number;
+  share: number; // % of its month's essential spending
+}
+
 export interface EmergencyEstimate {
   average_months: number;
   monthly: number;
@@ -206,6 +226,8 @@ export interface Emergency {
   months_of_data: number;
   history: EmergencyMonth[]; // oldest first
   essential_categories: string[];
+  breakdown: EmergencyCategory[]; // biggest first, over the months in history
+  one_offs: EmergencyOneOff[]; // single big payments that skew their month, biggest first
   estimates: EmergencyEstimate[]; // typical month for each averaging window (3, 6, 12) — for live previews
   target: number;
   saved: number;
@@ -220,4 +242,159 @@ export interface EmergencySummary {
   months_cover: number;
   covered_months: number | null;
   status: EmergencyStatus;
+}
+
+// ---------- Gmail import + Inbox
+
+export interface GmailRef {
+  id: string;
+  subject: string | null;
+  from_addr: string | null;
+}
+
+export interface GmailStatus {
+  client_configured: boolean;
+  client_id_hint: string | null;
+  connected: boolean;
+  email: string | null;
+  connected_at: string | null;
+  last_fetch_to: string | null;
+  consent_threshold_mb: number;
+}
+
+export interface GmailProvider {
+  id: string;
+  provider_id: string;
+  name: string;
+  doc_type: string; // readable kind
+  kind: 'bank_statement' | 'credit_card_statement' | 'loan_statement' | 'mf_statement' | 'transaction_alert';
+}
+
+export interface GmailRun {
+  id: number;
+  status: 'estimated' | 'running' | 'cancelling' | 'done' | 'cancelled' | 'error';
+  date_from: string;
+  date_to: string;
+  queries: { label: string; provider_id: string | null; doc_type: string | null; query: string }[];
+  matched_count: number;
+  new_count: number;
+  bytes_estimated: number;
+  bytes_human: string;
+  consent_required: boolean;
+  message_count: number;
+  attachment_count: number;
+  bytes_downloaded: number;
+  progress: string | null;
+  error: string | null;
+}
+
+export interface GmailConnectOut {
+  url: string;
+  redirect_uri: string;
+  direct: boolean;
+}
+
+export interface InboxAttachment {
+  id: number;
+  filename: string;
+  mime_type: string | null;
+  size: number;
+}
+
+export interface InboxItem {
+  id: string;
+  from_addr: string | null;
+  subject: string | null;
+  sent_at: string | null;
+  snippet: string | null;
+  provider_id: string | null;
+  doc_type: string | null;
+  status: 'new' | 'handled' | 'ignored';
+  attachments: InboxAttachment[];
+  transaction_count: number;
+  is_alert: boolean; // a transaction alert MoneyMap could read
+}
+
+export interface AlertSuggestion {
+  type: 'withdrawal' | 'deposit';
+  amount: number;
+  date: string;
+  merchant: string | null;
+  account_last4: string | null;
+  account_id: number | null;
+}
+
+export interface InboxDetail extends InboxItem {
+  body_text: string | null;
+  matched_query: string | null;
+  transactions: Txn[];
+  suggestion: AlertSuggestion | null;
+}
+
+export interface InboxPage {
+  items: InboxItem[];
+  total: number;
+  counts: Record<'new' | 'handled' | 'ignored', number>;
+}
+
+// ---------- statement import
+
+export type StatementRowStatus = 'ready' | 'needs_category' | 'needs_account' | 'duplicate' | 'skipped' | 'imported';
+
+export interface StatementRow {
+  id: number;
+  idx: number;
+  date: string;
+  amount: number; // signed paise: − out of the account, + in
+  description: string;
+  raw: string;
+  counterparty: string | null;
+  balance: number | null;
+  include: boolean;
+  kind: 'expense' | 'income' | 'transfer';
+  payee: string;
+  category_id: number | null;
+  budget_id: number | null;
+  transfer_account_id: number | null;
+  leave_uncategorised: boolean;
+  user_set: boolean;
+  suggestion: string | null;
+  suggestion_kind: 'history' | null;
+  duplicate_of: number | null;
+  duplicate: Txn | null;
+  transaction_id: number | null;
+  status: StatementRowStatus;
+}
+
+export interface StatementSummary {
+  id: number;
+  filename: string;
+  doc_type: 'bank_statement' | 'card_statement';
+  account_last4: string | null;
+  account_id: number | null;
+  gmail_message_id: string | null;
+  upload_path: string | null;
+  status: 'draft' | 'imported';
+  imported_count: number;
+  created_at: string;
+  imported_at: string | null;
+  row_count: number;
+  counts: Record<StatementRowStatus, number>;
+}
+
+export interface StatementDetail extends StatementSummary {
+  unparsed: string[];
+  rows: StatementRow[];
+  account_suggested: boolean;
+  overlaps: StatementOverlap[];
+  opened_existing: boolean;
+}
+
+/** Another import with the same transactions (e.g. the same statement from Gmail and uploaded). */
+export interface StatementOverlap {
+  id: number;
+  filename: string;
+  source: 'email' | 'upload';
+  status: 'draft' | 'imported';
+  shared_rows: number;
 }

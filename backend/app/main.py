@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
@@ -10,12 +11,23 @@ from .modules.bills.router import router as bills_router
 from .modules.budgets.router import router as budgets_router
 from .modules.categories.router import router as categories_router
 from .modules.emergency.router import router as emergency_router
+from .modules.gmail.fetch import recover_stuck_runs
+from .modules.gmail.inbox_router import router as inbox_router
+from .modules.gmail.router import router as gmail_router
 from .modules.overview.router import router as overview_router
 from .modules.piggybanks.router import router as piggybanks_router
 from .modules.reset.router import router as reset_router
+from .modules.statements.router import router as statements_router
 from .modules.transactions.router import router as transactions_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  [%(name)s] %(message)s")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    recover_stuck_runs()  # a restart kills Gmail fetch threads; don't leave them "running"
+    yield
+
 
 app = FastAPI(
     title="MoneyMap API",
@@ -23,6 +35,7 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url=None,
     openapi_url="/api/openapi.json",
+    lifespan=lifespan,
 )
 
 # One line per feature. Every router except auth requires a signed-in user.
@@ -36,6 +49,9 @@ for r in (
     bills_router,
     piggybanks_router,
     emergency_router,
+    gmail_router,
+    inbox_router,
+    statements_router,
     reset_router,
 ):
     app.include_router(r, prefix="/api")

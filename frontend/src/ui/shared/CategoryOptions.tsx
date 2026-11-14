@@ -17,15 +17,18 @@ export function kindFor(type: string | null | undefined): CategoryKind | undefin
  * <option>s for a category <select>, grouped Expense / Income. With `kind`,
  * only that type is listed — plus the currently selected category (`keep`)
  * if it is of the other type, so an existing choice never disappears.
+ * With `markEssential`, essential expense categories read "Rent · Essential".
  */
 export function CategoryOptions({
   categories,
   kind,
   keep,
+  markEssential = false,
 }: {
   categories: CategoryRef[];
   kind?: CategoryKind;
   keep?: number | string | null;
+  markEssential?: boolean;
 }) {
   const keepId = keep === null || keep === undefined || keep === '' ? null : Number(keep);
   return (
@@ -36,7 +39,7 @@ export function CategoryOptions({
         return (
           <optgroup key={k} label={label}>
             {list.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>{c.name}{markEssential && c.essential ? ' · Essential' : ''}</option>
             ))}
           </optgroup>
         );

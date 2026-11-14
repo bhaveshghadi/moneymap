@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     # Login lockout: this many wrong passwords in a row locks login for lockout_minutes.
     max_failed_logins: int = 5
     lockout_minutes: int = 15
+    # Gmail fetches estimated above this size need a confirmation tick.
+    gmail_consent_mb: int = 1000
 
     @property
     def database_url(self) -> str:

@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon } from '../primitives/Icon';
+import { useApi } from '../contexts/ShellCtx';
 
 interface NavItem {
   href: string;
@@ -20,6 +21,12 @@ const MAIN: NavItem[] = [
   { href: '/piggy-banks', label: 'Piggy banks', icon: 'piggy-bank' },
 ];
 
+// Gmail import: fetched emails and the statements read from them (or uploaded).
+const IMPORT: NavItem[] = [
+  { href: '/inbox', label: 'Inbox', icon: 'inbox' },
+  { href: '/statements', label: 'Statements', icon: 'file-spreadsheet' },
+];
+
 const TOOLS: NavItem[] = [
   { href: '/categories', label: 'Categories & tags', icon: 'tags' },
   { href: '/settings', label: 'Settings', icon: 'settings' },
@@ -27,6 +34,9 @@ const TOOLS: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  // the Inbox shows how many fetched emails are still to deal with
+  const inbox = useApi<{ new: number }>('/inbox/counts');
+  const imports = IMPORT.map((t) => (t.href === '/inbox' && inbox.data?.new ? { ...t, count: inbox.data.new } : t));
 
   const renderItem = (it: NavItem) => {
     const active = it.href === '/' ? pathname === '/' : pathname === it.href || pathname.startsWith(`${it.href}/`);
@@ -52,6 +62,8 @@ export function Sidebar() {
         <img src="/assets/logo-wordmark.svg" alt="MoneyMap" style={{ height: 26 }} />
       </div>
       <div className="sb-nav">{MAIN.map(renderItem)}</div>
+      <div className="sb-section">Import</div>
+      <div className="sb-nav">{imports.map(renderItem)}</div>
       <div className="sb-section">Setup</div>
       <div className="sb-nav">{TOOLS.map(renderItem)}</div>
       <div className="sb-foot">

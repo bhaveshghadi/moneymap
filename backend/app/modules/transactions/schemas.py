@@ -25,6 +25,7 @@ class TransactionIn(BaseModel):
     # A new expense with no bill chosen is matched against the bills' words and
     # amount range unless this is false. Edits never auto-match.
     auto_match_bill: bool = True
+    gmail_message_id: str | None = Field(default=None, max_length=64)  # Inbox email it's recorded from
     tags: list[str] = []
     notes: str | None = None
 
@@ -42,6 +43,12 @@ class NamedRef(ORM):
     name: str
 
 
+class GmailRef(BaseModel):
+    id: str
+    subject: str | None
+    from_addr: str | None
+
+
 class TransactionOut(ORM):
     id: int
     type: str
@@ -53,6 +60,7 @@ class TransactionOut(ORM):
     category: CategoryRef | None
     budget: NamedRef | None = None
     bill: NamedRef | None = None
+    gmail: GmailRef | None = None
     tags: list[str]
     notes: str | None
 

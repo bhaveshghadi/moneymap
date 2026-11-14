@@ -31,6 +31,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/alembic.ini ./
 COPY backend/alembic ./alembic
 COPY backend/app ./app
+COPY backend/packs ./packs
 
 WORKDIR /app/frontend
 COPY --from=frontend /fe/.next/standalone ./

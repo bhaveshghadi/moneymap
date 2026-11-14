@@ -35,6 +35,7 @@ export function TransactionsPage() {
     account: sp.get('account') ?? '',
     category: sp.get('category') ?? '',
     uncategorised: sp.get('uncategorised') ?? '',
+    essential: sp.get('essential') ?? '', // '1' essential, '0' non-essential spending
     budget: sp.get('budget') ?? '',
     no_budget: sp.get('no_budget') ?? '',
     bill: sp.get('bill') ?? '',
@@ -74,6 +75,7 @@ export function TransactionsPage() {
     account_id: filters.account,
     category_id: filters.category,
     uncategorised: filters.uncategorised ? true : undefined,
+    essential: filters.essential === '1' ? true : filters.essential === '0' ? false : undefined,
     budget_id: filters.budget,
     no_budget: filters.no_budget ? true : undefined,
     bill_id: filters.bill,
@@ -207,15 +209,27 @@ export function TransactionsPage() {
         <select
           className="inp"
           aria-label="Category"
-          value={filters.uncategorised ? 'none' : filters.category}
-          onChange={(e) =>
-            e.target.value === 'none'
-              ? setFilter({ category: '', uncategorised: '1' })
-              : setFilter({ category: e.target.value, uncategorised: '' })
+          value={
+            filters.uncategorised
+              ? 'none'
+              : filters.essential === '1'
+                ? 'essential'
+                : filters.essential === '0'
+                  ? 'non-essential'
+                  : filters.category
           }
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === 'none') setFilter({ category: '', uncategorised: '1', essential: '' });
+            else if (v === 'essential') setFilter({ category: '', uncategorised: '', essential: '1' });
+            else if (v === 'non-essential') setFilter({ category: '', uncategorised: '', essential: '0' });
+            else setFilter({ category: v, uncategorised: '', essential: '' });
+          }}
         >
           <option value="">All categories</option>
           <option value="none">Uncategorised</option>
+          <option value="essential">Essential spending</option>
+          <option value="non-essential">Non-essential spending</option>
           <CategoryOptions categories={categories.data ?? []} />
         </select>
         <select

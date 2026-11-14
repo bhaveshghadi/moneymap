@@ -26,12 +26,14 @@ def _migrate():
 
 
 def _wipe():
-    """Empty every table so each test starts from a fresh install."""
+    """Empty every table and the stored files, so each test starts from a fresh install."""
     from app.db import Base, engine
 
     with engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             conn.execute(table.delete())
+    for sub in ("gmail", "backups"):
+        shutil.rmtree(_DATA / sub, ignore_errors=True)
 
 
 @pytest.fixture()

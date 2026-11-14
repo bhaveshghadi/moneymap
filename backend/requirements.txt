@@ -7,3 +7,7 @@ pydantic-settings==2.7.1
 itsdangerous==2.2.0
 argon2-cffi==23.1.0
 typer==0.15.1
+httpx==0.28.1
+cryptography==44.0.0
+pdfminer.six==20240706
+pypdf[crypto]==5.1.0

@@ -7,6 +7,7 @@ import { useApi, useShell } from '../contexts/ShellCtx';
 import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { Button } from '../primitives/Button';
 import { SegmentedControl } from '../primitives/SegmentedControl';
+import { Icon } from '../primitives/Icon';
 import { DrawerHead } from './DrawerHead';
 import { CategoryOptions, kindFor } from './CategoryOptions';
 
@@ -23,6 +24,9 @@ export interface TxnDefaults {
   budget_id?: number;
   bill_id?: number;
   notes?: string;
+  /** Inbox: the email this transaction is recorded from. */
+  gmail_message_id?: string;
+  gmail_subject?: string;
 }
 
 const TYPE_OPTIONS = [
@@ -47,6 +51,8 @@ function initial(txn?: Txn, d: TxnDefaults = {}) {
       billId: txn.bill ? String(txn.bill.id) : 'none',
       tags: txn.tags.join(', '),
       notes: txn.notes ?? '',
+      gmailId: txn.gmail?.id ?? '',
+      gmailSubject: txn.gmail?.subject ?? '',
     };
   }
   return {
@@ -64,6 +70,8 @@ function initial(txn?: Txn, d: TxnDefaults = {}) {
     billId: d.bill_id ? String(d.bill_id) : 'auto',
     tags: '',
     notes: d.notes ?? '',
+    gmailId: d.gmail_message_id ?? '',
+    gmailSubject: d.gmail_subject ?? '',
   };
 }
 
@@ -86,6 +94,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&include_inactive=false');
   const counterparties = useApi<Account[]>('/accounts?type=expense&type=revenue');
   const categories = useApi<Category[]>('/categories');
+  const selectedCat = (categories.data ?? []).find((c) => String(c.id) === f.categoryId);
   const tags = useApi<Tag[]>('/tags');
   const budgets = useApi<BudgetMonth>(`/budgets?month=${f.date.slice(0, 7)}`);
   const bills = useApi<Bill[]>('/bills');
@@ -114,6 +123,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
       auto_match_bill: f.billId === 'auto',
       tags: f.tags.split(',').map((s) => s.trim()).filter(Boolean),
       notes: f.notes || null,
+      gmail_message_id: f.gmailId || null,
     };
     if (f.type === 'withdrawal') {
       body.source_id = f.sourceId ? Number(f.sourceId) : null;
@@ -185,6 +195,17 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
       <DrawerHead title={txn ? 'Edit transaction' : 'Add transaction'} sub="Amounts are in ₹" />
       <div className="drawer-body">
         {error && <div className="form-error" role="alert">{error}</div>}
+        {f.gmailId && (
+          <div className="note info" style={{ marginBottom: 14 }}>
+            <Icon name="mail" size={15} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              From email: <b>{f.gmailSubject || '(no subject)'}</b>
+            </span>
+            <button type="button" className="prov" onClick={() => setF((p) => ({ ...p, gmailId: '', gmailSubject: '' }))} title="Unlink the email">
+              <Icon name="unlink" size={13} /> Unlink
+            </button>
+          </div>
+        )}
         <div className="field">
           <SegmentedControl aria-label="Transaction type" value={f.type} onChange={(v) => set('type', v as TxnType)} options={TYPE_OPTIONS} />
         </div>
@@ -224,11 +245,26 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
 
         {f.type !== 'transfer' && (
           <div className="field">
-            <label htmlFor="tx-cat">Category</label>
+            <label htmlFor="tx-cat" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              Category
+              {selectedCat?.kind === 'expense' && (
+                <span className={`badge ${selectedCat.essential ? 'mint' : 'neutral'}`} title="Essential spending counts towards the emergency fund">
+                  {selectedCat.essential ? 'Essential' : 'Not essential'}
+                </span>
+              )}
+            </label>
             <select id="tx-cat" className="inp" value={f.categoryId} onChange={(e) => set('categoryId', e.target.value)}>
               <option value="">Uncategorised</option>
-              <CategoryOptions categories={categories.data ?? []} kind={kindFor(f.type)} keep={f.categoryId} />
+              <CategoryOptions categories={categories.data ?? []} kind={kindFor(f.type)} keep={f.categoryId} markEssential />
             </select>
+            {selectedCat?.kind === 'expense' && f.type === 'withdrawal' && (
+              <div className="hint">
+                {selectedCat.essential
+                  ? 'Counts towards your emergency fund target.'
+                  : 'Not counted in your emergency fund target.'}{' '}
+                Change it on Categories.
+              </div>
+            )}
           </div>
         )}
         {f.type === 'withdrawal' && (

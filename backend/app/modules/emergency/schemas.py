@@ -20,6 +20,29 @@ class EmergencyMonth(BaseModel):
     amount: int  # essential spending that month (paise)
 
 
+class EmergencyCategory(BaseModel):
+    """One essential category's share of the months used for the typical month."""
+
+    category_id: int
+    name: str
+    icon: str
+    color: str
+    total: int  # paise over all the months used
+    per_month: int  # total / months used (rounded)
+    share: float  # of all essential spending in those months, 0-100
+
+
+class EmergencyOneOff(BaseModel):
+    """A single essential payment big enough to skew its month - probably not a normal month's cost."""
+
+    transaction_id: int
+    date: str  # YYYY-MM-DD
+    description: str
+    category: str
+    amount: int  # paise
+    share: float  # of its month's essential spending, 0-100
+
+
 class EmergencyEstimate(BaseModel):
     """The typical month for one averaging window, so the settings can preview any choice live."""
 
@@ -40,6 +63,8 @@ class EmergencyOut(BaseModel):
     months_of_data: int = 0  # complete months with history that were used
     history: list[EmergencyMonth] = []  # oldest first
     essential_categories: list[str] = []
+    breakdown: list[EmergencyCategory] = []  # biggest first, over the months in `history`
+    one_offs: list[EmergencyOneOff] = []  # biggest first
     estimates: list[EmergencyEstimate] = []  # typical month for each averaging window (3, 6, 12)
     target: int = 0
     saved: int = 0

@@ -4,7 +4,7 @@ import hashlib
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,22 +14,24 @@ from sqlalchemy.orm import Session
 from ...config import get_settings
 from ...core.crypto import DecryptError, decrypt, encrypt
 from ...db import get_db
-from ..accounts.models import BALANCE_TYPES as _BALANCE
-from ..accounts.models import Account
+from ..accounts.models import OWN_TYPES, Account, AccountType
 from ..auth.models import Setting
 from ..auth.security import current_user
 from ..budgets.models import Budget
+from ..cards.models import CreditCard
 from ..categories.models import Category
 from ..gmail.fetch import attachments_dir
 from ..gmail.models import GmailAttachment
 from ..transactions.models import Transaction, TransactionType
 from ..transactions.schemas import TransactionIn
 from ..transactions.service import apply_body, sync_inbox_status, txn_out
+from .card_summary import parse_card_summary
 from .extract import StatementError, extract_candidates
 from .models import StatementImport, StatementRow
 from .parser import parse_statement, score
 from .review import payee_from, payee_key, refresh, row_status
 from .schemas import (
+    CardFigures,
     StatementDetail,
     StatementImportOut,
     StatementOverlap,
@@ -45,7 +47,8 @@ from .schemas import (
 log = logging.getLogger("moneymap.statements")
 router = APIRouter(prefix="/statements", tags=["statement import"], dependencies=[Depends(current_user)])
 
-BALANCE_TYPES = tuple(str(t) for t in _BALANCE)  # bank and cash (cards and loans come later)
+BALANCE_TYPES = tuple(str(t) for t in OWN_TYPES)  # bank, cash and credit cards (loans come later)
+ROUNDING = 100  # paise: a statement "adds up" within ₹1
 CAS_RE = re.compile(r"consolidated\s+account\s+statement", re.I)
 
 
@@ -59,7 +62,7 @@ def _bad(msg: str, code: str = "invalid") -> HTTPException:
 
 
 def _counts(rows: list[StatementRow]) -> dict[str, int]:
-    out = {"ready": 0, "needs_category": 0, "needs_account": 0, "duplicate": 0, "skipped": 0, "imported": 0}
+    out = {"ready": 0, "link": 0, "needs_category": 0, "needs_account": 0, "duplicate": 0, "skipped": 0, "imported": 0}
     for r in rows:
         out[row_status(r)] += 1
     return out
@@ -72,9 +75,56 @@ def _summary(imp: StatementImport) -> StatementSummary:
     return s
 
 
+def _figures(db: Session, imp: StatementImport) -> CardFigures | None:
+    """A card statement's summary box, and whether its rows add up to the total due."""
+    account = db.get(Account, imp.account_id) if imp.account_id else None
+    is_card = imp.doc_type == "card_statement" or (account is not None and account.type == AccountType.credit_card)
+    if not is_card:
+        return None
+    debits = sum(-r.amount for r in imp.rows if r.amount < 0)
+    credits = sum(r.amount for r in imp.rows if r.amount > 0)
+    f = CardFigures(
+        statement_date=imp.statement_date,
+        period_start=imp.period_start,
+        due_date=imp.due_date,
+        total_due=imp.total_due,
+        min_due=imp.min_due,
+        previous_balance=imp.previous_balance,
+        debits=debits,
+        credits=credits,
+    )
+    if account is not None and account.type == AccountType.credit_card and imp.statement_date:
+        card = db.scalar(select(CreditCard).where(CreditCard.account_id == account.id))
+        if card is not None and card.rules:
+            rule = card.rules[-1]
+            sd = imp.statement_date
+            month_end = (sd + timedelta(days=1)).day == 1
+            if sd.day != rule.statement_day and not (month_end and rule.statement_day >= sd.day):
+                f.suggest_statement_day = sd.day
+            if imp.due_date and rule.due_mode == "days_after" and (imp.due_date - sd).days != rule.due_value:
+                gap = (imp.due_date - sd).days
+                if 1 <= gap <= 60:
+                    f.suggest_due_days = gap
+            f.card_statement_day, f.card_due_mode, f.card_due_value = rule.statement_day, rule.due_mode, rule.due_value
+    if imp.total_due is not None and imp.previous_balance is not None:
+        f.expected_total = imp.previous_balance + debits - credits
+        f.difference = imp.total_due - f.expected_total
+        f.adds_up = abs(f.difference) <= ROUNDING
+    return f
+
+
+def _apply_summary(imp: StatementImport) -> None:
+    """Read the card summary box from the statement text (card statements only)."""
+    if imp.doc_type != "card_statement":
+        return
+    s = parse_card_summary(imp.text)
+    imp.statement_date, imp.period_start, imp.due_date = s.statement_date, s.period_start, s.due_date
+    imp.total_due, imp.min_due, imp.previous_balance = s.total_due, s.min_due, s.previous_balance
+
+
 def _detail(db: Session, imp: StatementImport, account_suggested: bool | None = None) -> StatementDetail:
     if account_suggested is None:
-        auto = _match_account(db, imp.account_last4)
+        auto = _match_account(db, imp.account_last4, imp.doc_type)
         account_suggested = auto is not None and auto.id == imp.account_id
     rows = []
     for r in imp.rows:
@@ -83,6 +133,9 @@ def _detail(db: Session, imp: StatementImport, account_suggested: bool | None = 
         if r.duplicate_of:
             t = db.get(Transaction, r.duplicate_of)
             out.duplicate = txn_out(t) if t else None
+        if r.link_txn_id:
+            t = db.get(Transaction, r.link_txn_id)
+            out.link = txn_out(t) if t else None
         rows.append(out)
     return StatementDetail(
         **_summary(imp).model_dump(),
@@ -90,6 +143,7 @@ def _detail(db: Session, imp: StatementImport, account_suggested: bool | None = 
         rows=rows,
         account_suggested=account_suggested,
         overlaps=_overlaps(db, imp),
+        figures=_figures(db, imp),
     )
 
 
@@ -136,14 +190,19 @@ def _sender_key(att: GmailAttachment) -> str:
     return f"pdf_password:{domain}"
 
 
-def _match_account(db: Session, last4: str | None) -> Account | None:
+def _match_account(db: Session, last4: str | None, doc_type: str | None = None) -> Account | None:
+    """Your account whose number ends in the statement's last 4 digits — a card for
+    a card statement, a bank or cash account for a bank statement (then any)."""
     if not last4:
         return None
+    matches = []
     for a in db.scalars(select(Account).where(Account.type.in_(BALANCE_TYPES), Account.active.is_(True))):
         digits = "".join(ch for ch in (a.account_number or "") if ch.isdigit())
         if digits.endswith(last4):
-            return a
-    return None
+            matches.append(a)
+    want_card = doc_type == "card_statement"
+    preferred = [a for a in matches if (a.type == AccountType.credit_card) == want_card]
+    return (preferred or matches or [None])[0]
 
 
 # ---------------------------------------------------------------- list / start
@@ -170,7 +229,7 @@ def start_import(body: StatementStartIn, db: Session = Depends(get_db)) -> State
         raise _bad("Only PDF statements can be imported.", "not_pdf")
 
     text, parsed = _read_pdf(db, att, body.password, body.remember_password)
-    account = _match_account(db, parsed.account_last4)
+    account = _match_account(db, parsed.account_last4, parsed.doc_type)
     imp = StatementImport(
         gmail_message_id=att.message_id,
         attachment_id=att.id,
@@ -183,6 +242,7 @@ def start_import(body: StatementStartIn, db: Session = Depends(get_db)) -> State
     # Even with zero rows the draft is kept (with all its text), so a layout the
     # parser doesn't understand yet can be inspected and re-read after a fix.
     _fill_rows(imp, parsed, text)
+    _apply_summary(imp)
     if not parsed.txns:
         log.warning("statement %s: no transactions found (%d text lines)", att.filename, len(text.splitlines()))
     db.add(imp)
@@ -209,7 +269,7 @@ def upload_statement(body: StatementUploadIn, db: Session = Depends(get_db)) -> 
     if body.account_id is not None:
         account = db.get(Account, body.account_id)
         if account is None or account.type not in BALANCE_TYPES:
-            raise _bad("Pick one of your bank or cash accounts.", "bad_account")
+            raise _bad("Pick one of your bank, cash or card accounts.", "bad_account")
     sha = hashlib.sha256(data).hexdigest()
     existing = db.scalar(
         select(StatementImport).where(StatementImport.file_sha256 == sha).order_by(StatementImport.id.desc())
@@ -239,7 +299,7 @@ def upload_statement(body: StatementUploadIn, db: Session = Depends(get_db)) -> 
     except HTTPException:
         path.unlink(missing_ok=True)  # nothing kept until it opens
         raise
-    matched = _match_account(db, parsed.account_last4)
+    matched = _match_account(db, parsed.account_last4, parsed.doc_type)
     chosen = account or matched
     imp = StatementImport(
         upload_path=rel,
@@ -250,7 +310,12 @@ def upload_statement(body: StatementUploadIn, db: Session = Depends(get_db)) -> 
         account_id=chosen.id if chosen else None,
         text=text,
     )
+    if chosen is not None and chosen.type == AccountType.credit_card:
+        imp.doc_type = "card_statement"  # you said it's a card statement
+        if parsed.doc_type != "card_statement":
+            parsed = parse_statement(text, "card_statement")
     _fill_rows(imp, parsed, text)
+    _apply_summary(imp)
     if not parsed.txns:
         log.warning("statement %s: no transactions found (%d text lines)", name, len(text.splitlines()))
     db.add(imp)
@@ -409,7 +474,9 @@ def reparse(sid: int, db: Session = Depends(get_db)) -> StatementDetail:
     """Read the saved statement text again (e.g. after a parser fix) — no
     password needed. Rows already imported are kept; the rest are rebuilt."""
     imp = _get(db, sid)
-    parsed = parse_statement(imp.text, "bank_statement")
+    current = db.get(Account, imp.account_id) if imp.account_id else None
+    on_card = current is not None and current.type == AccountType.credit_card
+    parsed = parse_statement(imp.text, "card_statement" if on_card else "bank_statement")
     kept_raw = {r.raw for r in imp.rows if r.transaction_id}
     edited = [r for r in imp.rows if r.user_set and not r.transaction_id]
     snapshot = [
@@ -423,12 +490,13 @@ def reparse(sid: int, db: Session = Depends(get_db)) -> StatementDetail:
     ]
     imp.rows = [r for r in imp.rows if r.transaction_id]
     parsed.txns = [t for t in parsed.txns if t.raw not in kept_raw]
-    imp.doc_type = parsed.doc_type
+    imp.doc_type = "card_statement" if on_card else parsed.doc_type
     imp.account_last4 = parsed.account_last4 or imp.account_last4
     if imp.account_id is None:
-        auto = _match_account(db, imp.account_last4)
+        auto = _match_account(db, imp.account_last4, imp.doc_type)
         imp.account_id = auto.id if auto else None
     _fill_rows(imp, parsed, imp.text)
+    _apply_summary(imp)
     carried = _carry_edits(snapshot, imp.rows)
     if carried:
         log.info("statement %s: kept your edits on %d of %d edited rows", sid, carried, len(snapshot))
@@ -453,7 +521,14 @@ def set_account(sid: int, body: StatementPatch, db: Session = Depends(get_db)) -
     if body.account_id is not None:
         a = db.get(Account, body.account_id)
         if a is None or a.type not in BALANCE_TYPES:
-            raise _bad("Choose one of your bank or cash accounts.")
+            raise _bad("Choose one of your bank, cash or card accounts.")
+        if a.type == AccountType.credit_card and imp.doc_type != "card_statement":
+            imp.account_id = a.id
+            if not any(r.transaction_id for r in imp.rows):
+                db.flush()
+                return reparse(sid, db)
+            imp.doc_type = "card_statement"
+            _apply_summary(imp)
     imp.account_id = body.account_id
     refresh(db, imp)
     db.commit()
@@ -497,8 +572,15 @@ def edit_row(sid: int, rid: int, body: StatementRowPatch, db: Session = Depends(
         raise _bad("Amount can't be zero.")
     if (kind == "expense" and amount > 0) or (kind == "income" and amount < 0):
         raise _bad("Money coming in is income and money going out is an expense — or choose transfer.")
+    if "link_txn_id" in data and data["link_txn_id"] is not None:
+        raise _bad("A link can only be removed here.")
     for k, v in data.items():
         setattr(row, k, v)
+    # the link to an existing expense only holds for a transfer from that expense's account
+    if row.link_txn_id:
+        linked = db.get(Transaction, row.link_txn_id)
+        if not row.include or row.kind != "transfer" or linked is None or row.transfer_account_id != linked.source_id:
+            row.link_txn_id = None
     if "amount" in data and "kind" not in data and row.kind != "transfer":
         row.kind = "income" if row.amount > 0 else "expense"  # sign flipped by an edit
     if "category_id" in data:
@@ -575,7 +657,31 @@ def do_import(sid: int, db: Session = Depends(get_db)) -> StatementImportOut:
 
     imported = 0
     for row in imp.rows:
-        if row_status(row) != "ready":
+        st = row_status(row)
+        if st == "link":
+            # the bank-side expense becomes the bank -> card transfer
+            t = db.get(Transaction, row.link_txn_id)
+            if t is not None and t.type == TransactionType.withdrawal.value:
+                t.type = TransactionType.transfer.value
+                t.destination_id = account.id
+                t.category_id = None
+                t.budget_id = None
+                t.bill_id = None
+                db.flush()
+                row.transaction_id = t.id
+                imported += 1
+                continue
+            row.link_txn_id = None
+            if (
+                t is not None
+                and t.type == TransactionType.transfer.value
+                and account.id in (t.source_id, t.destination_id)
+            ):
+                # already turned into this card's transfer (e.g. on the Credit cards page): nothing to add
+                row.duplicate_of, row.include = t.id, False
+                continue
+            st = row_status(row)  # the expense changed meanwhile: import the row as usual
+        if st != "ready":
             continue
         out = row.amount < 0
         body: dict = {
@@ -607,6 +713,7 @@ def do_import(sid: int, db: Session = Depends(get_db)) -> StatementImportOut:
             )
         t = Transaction()
         apply_body(db, t, TransactionIn(**body), is_new=True)
+        t.emi_id = row.emi_id  # card EMI instalment / interest / conversion
         db.add(t)
         db.flush()
         row.transaction_id = t.id

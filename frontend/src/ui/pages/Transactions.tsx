@@ -134,8 +134,8 @@ export function TransactionsPage() {
   }, [page]);
 
 
-  const ownAccounts = (accounts.data ?? []).filter((a) => ['asset', 'cash'].includes(a.type));
-  const otherAccounts = (accounts.data ?? []).filter((a) => !['asset', 'cash'].includes(a.type));
+  const ownAccounts = (accounts.data ?? []).filter((a) => ['asset', 'cash', 'credit_card', 'emi_plan'].includes(a.type));
+  const otherAccounts = (accounts.data ?? []).filter((a) => !['asset', 'cash', 'credit_card', 'emi_plan'].includes(a.type));
   const activeFilters = Object.entries(filters).some(([k, v]) => v && k !== 'type');
   const selectedAccount = accounts.data?.find((a) => String(a.id) === filters.account);
 
@@ -164,7 +164,7 @@ export function TransactionsPage() {
             icon="plus"
             onClick={() =>
               newTxn(
-                selectedAccount && ['asset', 'cash'].includes(selectedAccount.type)
+                selectedAccount && ['asset', 'cash', 'credit_card'].includes(selectedAccount.type)
                   ? { source_id: selectedAccount.id }
                   : undefined,
               )

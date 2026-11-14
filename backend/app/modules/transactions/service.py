@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..accounts.models import BALANCE_TYPES, Account, AccountType
+from ..accounts.models import OWN_TYPES, Account, AccountType
 from ..accounts.service import find_or_create_counterparty
 from ..bills.models import Bill
 from ..bills.service import match_bill
@@ -67,7 +67,7 @@ def _resolve_side(
 
 def resolve_accounts(db: Session, body: TransactionIn) -> tuple[Account, Account]:
     """Check both sides for the transaction type, creating the payee account by name if needed."""
-    balance = {str(x) for x in BALANCE_TYPES}
+    balance = {str(x) for x in OWN_TYPES}
     if body.type == TransactionType.withdrawal:
         src = _resolve_side(db, body.source_id, None, balance, None, "Paid from")
         dst = _resolve_side(db, body.destination_id, body.destination_name, {"expense"}, AccountType.expense, "Paid to")

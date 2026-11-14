@@ -71,6 +71,8 @@ export function monthRange(month: string): { from: string; to: string } {
 export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
   asset: 'Bank account',
   cash: 'Cash',
+  credit_card: 'Credit card',
+  emi_plan: 'Card EMI',
   expense: 'Expense account',
   revenue: 'Revenue account',
 };
@@ -78,6 +80,8 @@ export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
 export const ACCOUNT_TYPE_ICON: Record<AccountType, { icon: string; color: string }> = {
   asset: { icon: 'landmark', color: 'indigo' },
   cash: { icon: 'banknote', color: 'mint' },
+  credit_card: { icon: 'credit-card', color: 'purple' },
+  emi_plan: { icon: 'calendar-range', color: 'purple' },
   expense: { icon: 'shopping-cart', color: 'slate' },
   revenue: { icon: 'briefcase', color: 'mint' },
 };

@@ -108,8 +108,25 @@ def extract_counterparty(desc: str) -> str | None:
     return None
 
 
+CARD_TITLE_LINE_RE = re.compile(r"^\s*credit card statement\s*$", re.I)
+CARD_SUMMARY_WORDS = (
+    re.compile(r"minimum amount due", re.I),
+    re.compile(r"total amount due", re.I),
+    re.compile(r"credit limit", re.I),
+)
+
+
 def is_card_statement(text: str) -> bool:
-    return bool(CARD_STATEMENT_HEADER_RE.search(" ".join(text.split("\n")[:8])))
+    """A credit card statement: the title in the first lines, a "CREDIT CARD STATEMENT"
+    title line further down page 1 (ICICI prints its summary boxes first), or the
+    card summary words (minimum amount due, total amount due, credit limit) together."""
+    lines = text.split("\n")
+    if CARD_STATEMENT_HEADER_RE.search(" ".join(lines[:8])):
+        return True
+    if any(CARD_TITLE_LINE_RE.match(ln) for ln in lines[:200]):
+        return True
+    head = "\n".join(lines[:200])
+    return all(rx.search(head) for rx in CARD_SUMMARY_WORDS)
 
 
 def _header_region(text: str) -> list[str]:

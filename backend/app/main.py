@@ -9,6 +9,8 @@ from .modules.accounts.router import router as accounts_router
 from .modules.auth.router import router as auth_router
 from .modules.bills.router import router as bills_router
 from .modules.budgets.router import router as budgets_router
+from .modules.cards.emi import router as emi_router
+from .modules.cards.router import router as cards_router
 from .modules.categories.router import router as categories_router
 from .modules.emergency.router import router as emergency_router
 from .modules.gmail.fetch import recover_stuck_runs
@@ -49,6 +51,8 @@ for r in (
     bills_router,
     piggybanks_router,
     emergency_router,
+    cards_router,
+    emi_router,
     gmail_router,
     inbox_router,
     statements_router,

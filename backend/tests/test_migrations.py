@@ -52,3 +52,15 @@ def test_0005_refuses_when_a_liability_has_transactions():
         )
         r = _alembic(d, "upgrade", "head")
         assert r.returncode != 0 and "use a liability account" in r.stderr
+
+
+def test_0013_adds_card_fee_category_to_existing_categories():
+    with tempfile.TemporaryDirectory() as d:
+        assert _alembic(d, "upgrade", "0012_credit_cards").returncode == 0
+        _sql(d, "INSERT INTO category (name, kind, icon, color, essential) VALUES ('Rent', 'expense', 'key', 'indigo', 1);")
+        r = _alembic(d, "upgrade", "head")
+        assert r.returncode == 0, r.stderr
+        db = sqlite3.connect(Path(d) / "moneymap.db")
+        names = [n for (n,) in db.execute("SELECT name FROM category ORDER BY id")]
+        db.close()
+        assert names == ["Rent", "Card Fees & Interest"]

@@ -264,7 +264,7 @@ function EmailBody({ id }: { id: string }) {
   };
   const { newTxn, openTxn } = useTxn();
   const { data: m, error, reload } = useApi<InboxDetail>(`/inbox/${encodeURIComponent(id)}`);
-  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash');
+  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card');
   const [busy, setBusy] = useState(false);
 
   const setStatus = async (status: 'new' | 'ignored') => {

@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..transactions.models import Transaction
-from .models import BALANCE_TYPES, Account, AccountType
+from .models import OWN_TYPES, Account, AccountType
 from .schemas import AccountOut
 
 
@@ -34,7 +34,7 @@ def account_stats(db: Session, account_ids: Iterable[int] | None = None) -> dict
 
 def account_out(a: Account, stats: dict | None) -> AccountOut:
     st = stats or {"in": 0, "out": 0, "count": 0, "last": None}
-    if a.type in BALANCE_TYPES:
+    if a.type in OWN_TYPES:
         balance = a.opening_balance + st["in"] - st["out"]
     elif a.type == AccountType.expense:
         balance = st["in"]

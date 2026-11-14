@@ -10,14 +10,20 @@ from ...db import Base
 class AccountType(enum.StrEnum):
     asset = "asset"  # bank accounts, wallets you own
     cash = "cash"  # physical cash
+    credit_card = "credit_card"  # balance below zero = owed on the card (details in modules/cards)
+    emi_plan = "emi_plan"  # a card EMI: balance below zero = principal still to pay (modules/cards/emi.py)
     expense = "expense"  # where money goes (merchants, payees)
     revenue = "revenue"  # where money comes from (employer, refunds)
 
 
 # Accounts that hold a balance you own. Expense/revenue accounts are
-# counterparties: they only accumulate totals. (Credit cards and loans come
-# later as their own features.)
+# counterparties: they only accumulate totals. (Loans come later.)
 BALANCE_TYPES = {AccountType.asset, AccountType.cash}
+# Your own accounts that transactions can use: bank, cash and credit cards. Spending on a
+# card is an expense from the card; paying the bill is a transfer bank -> card.
+OWN_TYPES = BALANCE_TYPES | {AccountType.credit_card, AccountType.emi_plan}
+# Made and changed on the Credit cards page only.
+CARD_TYPES = {AccountType.credit_card, AccountType.emi_plan}
 
 
 class Account(Base):

@@ -61,6 +61,7 @@ DEFAULT_CATEGORIES: list[tuple[str, str, str, str]] = [
     ("Loan / EMI", "expense", "landmark", "coral"),
     ("Taxes", "expense", "scale", "slate"),
     ("Bank Charges & Fees", "expense", "receipt", "red"),
+    ("Card Fees & Interest", "expense", "percent", "red"),
     ("Investment", "expense", "trending-up", "mint"),
 ]
 

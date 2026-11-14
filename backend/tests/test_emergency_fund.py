@@ -198,7 +198,7 @@ def test_migration_marks_existing_starter_categories():
                          "('Taxes', 'income', 'x', 'slate');")
         db.commit()
         db.close()
-        assert run("upgrade", "head").returncode == 0
+        assert run("upgrade", "0009_emergency_fund").returncode == 0
         db = sqlite3.connect(Path(d) / "moneymap.db")
         assert dict(db.execute("SELECT name, essential FROM category").fetchall()) == {"Rent": 1, "Dining": 0, "Taxes": 0}
         db.close()

@@ -14,7 +14,7 @@ import { Icon } from '../primitives/Icon';
 
 export function StatementsPage() {
   const { data, error, reload } = useApi<StatementSummary[]>('/statements');
-  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash');
+  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card');
   const name = (id: number | null) => accounts.data?.find((a) => a.id === id)?.name ?? '—';
   const sp = useSearchParams();
   const [uploading, setUploading] = useState(sp.get('upload') === '1');

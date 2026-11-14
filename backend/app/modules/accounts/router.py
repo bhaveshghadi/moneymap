@@ -6,7 +6,7 @@ from ...db import get_db
 from ..auth.security import current_user
 from ..piggybanks.models import PiggyBank
 from ..transactions.models import Transaction
-from .models import BALANCE_TYPES, Account, AccountType
+from .models import BALANCE_TYPES, CARD_TYPES, Account, AccountType
 from .schemas import AccountIn, AccountOut, AccountPatch
 from .service import account_out, account_stats
 
@@ -48,6 +48,8 @@ def _check_unique(db: Session, name: str, type_: str, exclude_id: int | None = N
 
 @router.post("", response_model=AccountOut, status_code=201)
 def create_account(body: AccountIn, db: Session = Depends(get_db)) -> AccountOut:
+    if body.type in CARD_TYPES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Add credit cards and EMIs on the Credit cards page.")
     _check_unique(db, body.name, body.type)
     data = body.model_dump()
     if body.type in COUNTERPARTY:
@@ -68,6 +70,8 @@ def get_account(account_id: int, db: Session = Depends(get_db)) -> AccountOut:
 @router.patch("/{account_id}", response_model=AccountOut)
 def update_account(account_id: int, body: AccountPatch, db: Session = Depends(get_db)) -> AccountOut:
     a = _get(db, account_id)
+    if a.type in CARD_TYPES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Change cards and EMIs on the Credit cards page.")
     data = body.model_dump(exclude_unset=True)
     new_type = data.pop("type", None) or a.type
     # Balances work the same way for bank and cash, so their transactions stay valid on a switch.
@@ -94,6 +98,8 @@ def update_account(account_id: int, body: AccountPatch, db: Session = Depends(ge
 @router.delete("/{account_id}", status_code=204)
 def delete_account(account_id: int, db: Session = Depends(get_db)) -> None:
     a = _get(db, account_id)
+    if a.type in CARD_TYPES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Delete cards and EMIs on the Credit cards page.")
     used = db.scalar(
         select(func.count())
         .select_from(Transaction)

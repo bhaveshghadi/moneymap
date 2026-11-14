@@ -7,7 +7,7 @@ export interface AuthStatus {
 }
 
 // Credit cards and loans come later as their own features.
-export type AccountType = 'asset' | 'cash' | 'expense' | 'revenue';
+export type AccountType = 'asset' | 'cash' | 'credit_card' | 'emi_plan' | 'expense' | 'revenue';
 export type TxnType = 'withdrawal' | 'deposit' | 'transfer';
 
 export interface AccountRef {
@@ -121,7 +121,100 @@ export interface Overview {
   transaction_count: number;
   budgets: Budget[]; // the month's active budgets with an amount or spending
   upcoming_bills: BillDue[]; // overdue + due in the next 30 days (current month only)
+  cards_owed: number; // outstanding on active credit cards (already taken off net_worth)
+  card_dues: CardDue[]; // card statements overdue or due in the next 30 days (current month only)
   emergency: EmergencySummary | null; // once the emergency fund is set up
+}
+
+// ---------- credit cards (F17)
+
+export type DueMode = 'days_after' | 'fixed_day';
+export type CycleStatus = 'unbilled' | 'nothing_due' | 'billed' | 'partly_paid' | 'paid' | 'overdue';
+
+export interface CardCycle {
+  start: string;
+  statement_date: string;
+  due_date: string;
+  spent: number;
+  credits: number;
+  total_due: number;
+  min_due: number;
+  paid: number;
+  paid_on: string | null;
+  status: CycleStatus;
+  min_paid: boolean;
+  official: boolean; // figures from the imported statement
+}
+
+export interface Card {
+  id: number; // the card's account id
+  name: string;
+  bank: string | null;
+  last4: string | null;
+  network: string | null;
+  color: string;
+  credit_limit: number;
+  min_due_pct: number;
+  statement_day: number;
+  due_mode: DueMode;
+  due_value: number;
+  opening_owed: number;
+  opening_date: string | null;
+  active: boolean;
+  notes: string | null;
+  owed: number;
+  emi_outstanding: number; // EMI principal still to pay (not on a bill yet)
+  emi_count: number;
+  available: number | null; // limit − owed − EMIs
+  utilisation: number | null;
+  current: CardCycle;
+  last_statement: CardCycle | null;
+  due_now: number;
+  next_due_date: string | null;
+  due_status: CycleStatus | null;
+  best_swipe_day: string;
+  interest_free_days: number;
+  transaction_count: number;
+}
+
+export interface CardDetail extends Card {
+  cycles: CardCycle[]; // newest first
+  emis: Emi[];
+}
+
+export interface Emi {
+  id: number;
+  card_id: number;
+  account_id: number;
+  name: string;
+  kind: 'converted' | 'checkout' | 'existing';
+  principal: number;
+  tenure: number;
+  instalment: number | null;
+  interest_rate: number | null;
+  processing_fee: number | null;
+  no_cost: boolean;
+  start_date: string;
+  finish_date: string;
+  paid_count: number;
+  outstanding: number;
+  principal_paid: number;
+  interest_paid: number;
+  next_date: string | null;
+  status: 'active' | 'closed';
+  closed_on: string | null;
+  purchase_txn_id: number | null;
+  notes: string | null;
+}
+
+export interface CardDue {
+  card_id: number;
+  name: string;
+  last4: string | null;
+  due_date: string;
+  amount: number;
+  min_due: number;
+  status: CycleStatus;
 }
 
 // ---------- bills (F7)
@@ -339,7 +432,7 @@ export interface InboxPage {
 
 // ---------- statement import
 
-export type StatementRowStatus = 'ready' | 'needs_category' | 'needs_account' | 'duplicate' | 'skipped' | 'imported';
+export type StatementRowStatus = 'ready' | 'link' | 'needs_category' | 'needs_account' | 'duplicate' | 'skipped' | 'imported';
 
 export interface StatementRow {
   id: number;
@@ -359,9 +452,13 @@ export interface StatementRow {
   leave_uncategorised: boolean;
   user_set: boolean;
   suggestion: string | null;
-  suggestion_kind: 'history' | null;
+  suggestion_kind: 'history' | 'card' | 'link' | 'emi' | null;
   duplicate_of: number | null;
   duplicate: Txn | null;
+  link_txn_id: number | null; // card payment: this bank-side expense becomes the transfer on import
+  link: Txn | null;
+  flag: 'emi' | null;
+  emi_id: number | null;
   transaction_id: number | null;
   status: StatementRowStatus;
 }
@@ -387,7 +484,28 @@ export interface StatementDetail extends StatementSummary {
   rows: StatementRow[];
   account_suggested: boolean;
   overlaps: StatementOverlap[];
+  figures: CardFigures | null; // card statements only
   opened_existing: boolean;
+}
+
+/** A card statement's summary box and the add-up check (previous + purchases − credits = total due). */
+export interface CardFigures {
+  statement_date: string | null;
+  period_start: string | null;
+  due_date: string | null;
+  total_due: number | null;
+  min_due: number | null;
+  previous_balance: number | null;
+  debits: number;
+  credits: number;
+  expected_total: number | null;
+  difference: number | null;
+  adds_up: boolean | null;
+  card_statement_day: number | null;
+  card_due_mode: string | null;
+  card_due_value: number | null;
+  suggest_statement_day: number | null; // the card is set to another statement day than this statement's
+  suggest_due_days: number | null; // ...or another gap between statement and due date
 }
 
 /** Another import with the same transactions (e.g. the same statement from Gmail and uploaded). */

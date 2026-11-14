@@ -48,6 +48,10 @@ class StatementRowOut(ORM):
     suggestion_kind: str | None
     duplicate_of: int | None
     duplicate: TransactionOut | None = None
+    link_txn_id: int | None = None  # bank-side expense this payment row will turn into the transfer
+    link: TransactionOut | None = None
+    flag: str | None = None  # emi: an EMI row with no plan to match yet
+    emi_id: int | None = None  # the card EMI it belongs to
     transaction_id: int | None
     status: str = ""
 
@@ -79,11 +83,35 @@ class StatementOverlap(BaseModel):
     shared_rows: int
 
 
+class CardFigures(BaseModel):
+    """A card statement's summary box (each figure only if found) and the add-up check:
+    previous balance + purchases - credits should equal the total due."""
+
+    statement_date: Date | None = None
+    period_start: Date | None = None
+    due_date: Date | None = None
+    total_due: int | None = None
+    min_due: int | None = None
+    previous_balance: int | None = None
+    debits: int = 0  # all rows of the statement
+    credits: int = 0
+    expected_total: int | None = None
+    difference: int | None = None  # total_due - expected_total
+    adds_up: bool | None = None  # None = not enough figures to check
+    # the card's billing cycle vs this statement: a different statement day / due gap is suggested
+    card_statement_day: int | None = None
+    card_due_mode: str | None = None
+    card_due_value: int | None = None
+    suggest_statement_day: int | None = None
+    suggest_due_days: int | None = None
+
+
 class StatementDetail(StatementSummary):
     unparsed: list[str]
     rows: list[StatementRowOut]
     account_suggested: bool = False  # account picked automatically from the statement's last 4 digits
     overlaps: list[StatementOverlap] = []
+    figures: CardFigures | None = None  # card statements only
     # upload only: this exact file was already opened (from the Inbox or an
     # earlier upload), so that statement is returned instead of a new draft
     opened_existing: bool = False
@@ -104,6 +132,7 @@ class StatementRowPatch(BaseModel):
     budget_id: int | None = None
     transfer_account_id: int | None = None
     leave_uncategorised: bool | None = None
+    link_txn_id: int | None = None  # only null: import the payment row as a new transfer instead
 
 
 class StatementImportOut(BaseModel):

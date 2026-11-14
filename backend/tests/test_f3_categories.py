@@ -4,7 +4,7 @@ from .helpers import TODAY, balance, cat_id, spend  # noqa: F401
 
 def test_setup_seeds_categories(client):
     cats = client.get("/api/categories").json()
-    assert len(cats) == 51
+    assert len(cats) == 52
     kinds = {c["kind"] for c in cats}
     assert kinds == {"expense", "income"}
     assert sum(c["kind"] == "income" for c in cats) == 11

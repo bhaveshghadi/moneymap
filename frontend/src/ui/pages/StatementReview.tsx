@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api, ApiError } from '../lib/api';
 import { useApi, useShell } from '../contexts/ShellCtx';
-import type { Account, BudgetMonth, Category, StatementDetail, StatementRow, StatementRowStatus } from '../lib/types';
+import type { Account, BudgetMonth, CardFigures, Category, StatementDetail, StatementRow, StatementRowStatus } from '../lib/types';
 import { fmtDate, paiseToInput, rs, toPaise } from '../lib/format';
 import { Button } from '../primitives/Button';
 import { Money } from '../primitives/Money';
@@ -22,7 +22,7 @@ type Filter = 'all' | 'needs' | 'ready' | 'duplicate' | 'skipped' | 'imported';
 const FILTERS: { id: Filter; label: string; match: (s: StatementRowStatus) => boolean }[] = [
   { id: 'all', label: 'All', match: () => true },
   { id: 'needs', label: 'Needs you', match: (s) => s === 'needs_category' || s === 'needs_account' },
-  { id: 'ready', label: 'Ready', match: (s) => s === 'ready' },
+  { id: 'ready', label: 'Ready', match: (s) => s === 'ready' || s === 'link' },
   { id: 'duplicate', label: 'Already in MoneyMap', match: (s) => s === 'duplicate' },
   { id: 'skipped', label: 'Skipped', match: (s) => s === 'skipped' },
   { id: 'imported', label: 'Imported', match: (s) => s === 'imported' },
@@ -30,6 +30,7 @@ const FILTERS: { id: Filter; label: string; match: (s: StatementRowStatus) => bo
 
 const STATUS_BADGE: Record<StatementRowStatus, [string, string]> = {
   ready: ['mint', 'Ready'],
+  link: ['mint', 'Ready · links'],
   needs_category: ['cau', 'Needs category'],
   needs_account: ['cau', 'Needs account'],
   duplicate: ['neutral', 'Already in MoneyMap'],
@@ -42,7 +43,7 @@ export function StatementReviewPage({ id }: { id: number }) {
   const existing = useSearchParams().get('existing');
   const { bump } = useShell();
   const { data, error, reload } = useApi<StatementDetail>(`/statements/${id}`);
-  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&include_inactive=false');
+  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card&type=emi_plan&include_inactive=false');
   const categories = useApi<Category[]>('/categories');
   const budgets = useApi<BudgetMonth>('/budgets');
   const [st, setSt] = useState<StatementDetail | null>(null);
@@ -82,15 +83,17 @@ export function StatementReviewPage({ id }: { id: number }) {
   }
 
   const counts = useMemo(() => {
-    const c: Record<StatementRowStatus, number> = { ready: 0, needs_category: 0, needs_account: 0, duplicate: 0, skipped: 0, imported: 0 };
+    const c: Record<StatementRowStatus, number> = { ready: 0, link: 0, needs_category: 0, needs_account: 0, duplicate: 0, skipped: 0, imported: 0 };
     for (const r of st?.rows ?? []) c[r.status] += 1;
     return c;
   }, [st]);
   const needs = counts.needs_category + counts.needs_account;
+  const toImport = counts.ready + counts.link;
   const rows = (st?.rows ?? []).filter((r) => FILTERS.find((f) => f.id === filter)!.match(r.status));
-  const own = accounts.data ?? [];
-  const otherAccounts = own.filter((a) => a.id !== st?.account_id);
-  const draft = st?.status === 'draft' || (st && counts.ready > 0);
+  const all = accounts.data ?? [];
+  const own = all.filter((a) => a.type !== 'emi_plan'); // a statement belongs to a bank, cash or card account
+  const otherAccounts = all.filter((a) => a.id !== st?.account_id && (a.type !== 'emi_plan' || own.find((o) => o.id === st?.account_id)?.type === 'credit_card'));
+  const draft = st?.status === 'draft' || (st && toImport > 0);
 
   // Rows with the same payee and type that you haven't set yourself (mirrors the API's _similar)
   const payeeKey = (p: string) => p.toLowerCase().replace(/[^a-z0-9@.]+/g, ' ').trim();
@@ -125,7 +128,7 @@ export function StatementReviewPage({ id }: { id: number }) {
     setMsg(null);
     try {
       const updated = await api<StatementRow>(`/statements/${id}/rows/${row.id}`, { method: 'PATCH', body });
-      setSt((s) => (s ? { ...s, rows: s.rows.map((r) => (r.id === row.id ? { ...r, ...updated, duplicate: r.duplicate } : r)) } : s));
+      setSt((s) => (s ? { ...s, rows: s.rows.map((r) => (r.id === row.id ? { ...r, ...updated, duplicate: r.duplicate, link: updated.link_txn_id ? r.link : null } : r)) } : s));
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
     }
@@ -191,7 +194,7 @@ export function StatementReviewPage({ id }: { id: number }) {
     ? 'Choose the account first'
     : needs > 0
       ? `${needs} row${needs === 1 ? '' : 's'} still need you`
-      : counts.ready === 0
+      : toImport === 0
         ? 'Nothing left to import'
         : null;
 
@@ -225,7 +228,7 @@ export function StatementReviewPage({ id }: { id: number }) {
           )}
           {draft && (
             <Button variant="primary" icon="download" onClick={doImport} disabled={busy || importDisabledReason !== null} title={importDisabledReason ?? undefined}>
-              {busy ? 'Working…' : `Import ${counts.ready} transaction${counts.ready === 1 ? '' : 's'}`}
+              {busy ? 'Working…' : `Import ${toImport} transaction${toImport === 1 ? '' : 's'}`}
             </Button>
           )}
         </div>
@@ -273,7 +276,12 @@ export function StatementReviewPage({ id }: { id: number }) {
         <label htmlFor="st-acct" style={{ fontWeight: 600, fontSize: 14 }}>Statement account</label>
         <select id="st-acct" className="inp" style={{ width: 'auto', minWidth: 220 }} value={st.account_id ?? ''} onChange={(e) => setAccount(e.target.value)} disabled={busy || st.status === 'imported'}>
           <option value="">Choose an account…</option>
-          {own.map((a) => <option key={a.id} value={a.id}>{a.name}{a.account_number ? ` (${a.account_number})` : ''}</option>)}
+          {own.filter((a) => a.type !== 'credit_card').map((a) => <option key={a.id} value={a.id}>{a.name}{a.account_number ? ` (${a.account_number})` : ''}</option>)}
+          {own.some((a) => a.type === 'credit_card') && (
+            <optgroup label="Credit cards">
+              {own.filter((a) => a.type === 'credit_card').map((a) => <option key={a.id} value={a.id}>{a.name}{a.account_number ? ` (··${a.account_number})` : ''}</option>)}
+            </optgroup>
+          )}
         </select>
         <span className="muted" style={{ fontSize: 12.5 }}>
           {st.account_id
@@ -285,6 +293,8 @@ export function StatementReviewPage({ id }: { id: number }) {
               : 'Choose which of your accounts this statement is for.'}
         </span>
       </div>
+
+      {st.figures && <FiguresPanel f={st.figures} cardId={st.account_id} onCardUpdated={reload} />}
 
       {(st.rows.length === 0 || showReread) && st.status === 'draft' && (
         <div className="note warn" style={{ marginBottom: 14, flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
@@ -348,7 +358,7 @@ export function StatementReviewPage({ id }: { id: number }) {
                     r={r}
                     categories={categories.data ?? []}
                     otherAccounts={otherAccounts}
-                    allAccounts={own}
+                    allAccounts={all}
                     onPatch={(b) => patchRow(r, b)}
                     onEdit={() => setEditing(r)}
                     similar={similarCount(r)}
@@ -381,6 +391,94 @@ export function StatementReviewPage({ id }: { id: number }) {
           }}
           onClose={() => setEditing(null)}
         />
+      )}
+    </div>
+  );
+}
+
+/** Card statement: the bank's summary box and whether the rows add up to it. */
+function FiguresPanel({ f, cardId, onCardUpdated }: { f: CardFigures; cardId: number | null; onCardUpdated: () => void }) {
+  const { bump } = useShell();
+  const [fixing, setFixing] = useState(false);
+  const [fixError, setFixError] = useState<string | null>(null);
+  const mismatch = cardId !== null && (f.suggest_statement_day !== null || f.suggest_due_days !== null);
+  const fixCard = async () => {
+    setFixing(true);
+    setFixError(null);
+    const body: Record<string, number> = {};
+    if (f.suggest_statement_day !== null) body.statement_day = f.suggest_statement_day;
+    if (f.suggest_due_days !== null) body.due_value = f.suggest_due_days;
+    try {
+      await api(`/cards/${cardId}`, { method: 'PATCH', body });
+      bump();
+      onCardUpdated();
+    } catch (e) {
+      setFixError((e as Error).message);
+    }
+    setFixing(false);
+  };
+  const item = (label: string, value: React.ReactNode) => (
+    <div style={{ minWidth: 110 }}>
+      <div className="muted" style={{ fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+      <div className="fig" style={{ fontSize: 15 }}>{value}</div>
+    </div>
+  );
+  const money = (v: number | null) => (v === null ? <span className="muted">—</span> : <Money amount={rs(v)} interactive={false} />);
+  const found = f.total_due !== null || f.due_date !== null || f.statement_date !== null;
+  return (
+    <div className="card card-pad" style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontWeight: 650 }}>Card statement summary</div>
+      {found ? (
+        <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
+          {item('Statement date', f.statement_date ? fmtDate(f.statement_date) : '—')}
+          {item('Due date', f.due_date ? fmtDate(f.due_date) : '—')}
+          {item('Previous balance', money(f.previous_balance))}
+          {item('Total due', money(f.total_due))}
+          {item('Minimum due', money(f.min_due))}
+        </div>
+      ) : (
+        <div className="muted" style={{ fontSize: 13 }}>The summary box (total due, due date) couldn’t be read from this PDF — the rows can still be imported.</div>
+      )}
+      {f.adds_up === true && (
+        <div className="note privacy">
+          <Icon name="circle-check" size={15} />
+          <span>
+            Adds up: previous balance + purchases <Money amount={rs(f.debits)} interactive={false} /> − payments and refunds{' '}
+            <Money amount={rs(f.credits)} interactive={false} /> = total due. Every row was read.
+          </span>
+        </div>
+      )}
+      {f.adds_up === false && f.difference !== null && (
+        <div className="note warn">
+          <Icon name="triangle-alert" size={15} />
+          <span>
+            Doesn’t add up: the rows give <Money amount={rs(f.expected_total ?? 0)} interactive={false} /> but the statement says{' '}
+            <Money amount={rs(f.total_due ?? 0)} interactive={false} /> (a difference of{' '}
+            <Money amount={rs(Math.abs(f.difference))} interactive={false} />). A row may have been missed or misread — check
+            the rows against the PDF before importing.
+          </span>
+        </div>
+      )}
+      {mismatch && (
+        <div className="note warn" style={{ alignItems: 'center' }}>
+          <Icon name="calendar-clock" size={15} />
+          <span style={{ flex: 1 }}>
+            {f.suggest_statement_day !== null && (
+              <>This statement is dated the <b>{f.suggest_statement_day}</b>, but the card is set to statement day {f.card_statement_day}. </>
+            )}
+            {f.suggest_due_days !== null && (
+              <>Payment is due <b>{f.suggest_due_days} days</b> after the statement, but the card is set to {f.card_due_value} days. </>
+            )}
+            Update the card so its statement and due dates match the bank&apos;s.
+            {fixError && <span style={{ color: 'var(--red-600)' }}> {fixError}</span>}
+          </span>
+          <Button variant="secondary" size="sm" onClick={fixCard} disabled={fixing}>{fixing ? 'Updating…' : 'Update card'}</Button>
+        </div>
+      )}
+      {f.total_due !== null && (
+        <div className="muted" style={{ fontSize: 12 }}>
+          After import, the card&apos;s statement for this cycle uses these figures instead of the worked-out ones.
+        </div>
       )}
     </div>
   );
@@ -446,6 +544,26 @@ function Row({
             Matches “{r.duplicate.description}” on {fmtDate(r.duplicate.date)}
           </div>
         )}
+        {r.link && r.status === 'link' && (
+          <div style={{ fontSize: 11.5, marginTop: 3, color: 'var(--indigo-700)' }}>
+            Already saved as an expense “{r.link.description}” on {fmtDate(r.link.date)} — importing turns it into this
+            transfer instead of adding it twice.{' '}
+            <button type="button" className="link-btn" onClick={() => onPatch({ link_txn_id: null })} style={{ fontSize: 11.5 }}>
+              Import as a new transfer instead
+            </button>
+          </div>
+        )}
+        {r.flag === 'emi' && !locked && (
+          <div style={{ fontSize: 11.5, marginTop: 3 }}>
+            <span className="badge cau">EMI?</span>{' '}
+            <span className="muted">An EMI row with no EMI to match — add the EMI on the card&apos;s page, then Re-read; or untick to skip.</span>
+          </div>
+        )}
+        {r.emi_id && r.suggestion_kind === 'emi' && !locked && (
+          <div style={{ fontSize: 11.5, marginTop: 3 }}>
+            <span className="badge brand">EMI</span> <span className="muted">{r.suggestion} — paying back the EMI, not new spending.</span>
+          </div>
+        )}
       </td>
       <td className="r figure" style={{ whiteSpace: 'nowrap' }}>
         {r.amount > 0 ? '+' : '−'}
@@ -477,7 +595,7 @@ function Row({
             onChange={(e) => onPatch({ transfer_account_id: e.target.value ? Number(e.target.value) : null })}
           >
             <option value="">{r.amount < 0 ? 'To which account?' : 'From which account?'}</option>
-            {otherAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            {otherAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.type === 'credit_card' ? ' (card)' : ''}</option>)}
           </select>
         ) : (
           <select

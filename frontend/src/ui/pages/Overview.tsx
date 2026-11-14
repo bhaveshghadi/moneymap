@@ -17,6 +17,7 @@ import { Icon } from '../primitives/Icon';
 import { TxnRow } from '../shared/TxnRow';
 import { BillBadge, Progress } from '../shared/Progress';
 import { EmergencyBadge, coverText } from '../shared/EmergencyFundCard';
+import { CycleBadge } from '../shared/CardForm';
 
 function Row({ href, glyph, title, sub, right }: { href: string; glyph: ReactNode; title: ReactNode; sub: ReactNode; right: ReactNode }) {
   return (
@@ -115,7 +116,7 @@ export function OverviewPage() {
           lbl="Net worth"
           icon="scale"
           val={<Money amount={rs(data.net_worth)} compact pos={data.net_worth >= 0} sign={data.net_worth < 0} />}
-          sub="Bank and cash today"
+          sub={data.cards_owed > 0 ? <>Bank and cash minus <Money amount={rs(data.cards_owed)} interactive={false} /> owed on cards</> : 'Bank and cash today'}
         />
         <StatCard
           lbl="Income"
@@ -217,6 +218,33 @@ export function OverviewPage() {
               </div>
               <Progress value={data.emergency.saved} max={data.emergency.target} savings />
             </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {data.card_dues.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <SectionCard title="Card payments due" action={{ label: 'All cards', href: '/credit-cards' }}>
+            {data.card_dues.map((d) => (
+              <Row
+                key={d.card_id}
+                href={`/credit-cards/${d.card_id}`}
+                glyph={<CategoryGlyph icon="credit-card" color={d.status === 'overdue' ? 'red' : 'purple'} size={34} />}
+                title={`${d.name}${d.last4 ? ` ··${d.last4}` : ''}`}
+                sub={
+                  <>
+                    {fmtDate(d.due_date)} · {dueText(d.due_date)}
+                    {d.min_due > 0 && <> · minimum <Money amount={rs(d.min_due)} interactive={false} /></>}
+                  </>
+                }
+                right={
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                    <Money amount={rs(d.amount)} interactive={false} />
+                    <CycleBadge status={d.status} />
+                  </span>
+                }
+              />
+            ))}
           </SectionCard>
         </div>
       )}

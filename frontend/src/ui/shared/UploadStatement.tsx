@@ -37,7 +37,7 @@ function Body() {
   const close = useDialogClose();
   const router = useRouter();
   const { bump } = useShell();
-  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash');
+  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card');
   const fileRef = useRef<HTMLInputElement | null>(null);
   const pwRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);

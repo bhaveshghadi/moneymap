@@ -91,7 +91,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&include_inactive=false');
+  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card&include_inactive=false');
   const counterparties = useApi<Account[]>('/accounts?type=expense&type=revenue');
   const categories = useApi<Category[]>('/categories');
   const selectedCat = (categories.data ?? []).find((c) => String(c.id) === f.categoryId);
@@ -102,7 +102,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
   // Inactive accounts are hidden, except the one this transaction already uses.
   const own = accounts.data ?? [];
-  const keepOwn = txn ? [txn.source, txn.destination].filter((a) => ['asset', 'cash'].includes(a.type) && !own.some((o) => o.id === a.id)) : [];
+  const keepOwn = txn ? [txn.source, txn.destination].filter((a) => ['asset', 'cash', 'credit_card', 'emi_plan'].includes(a.type) && !own.some((o) => o.id === a.id)) : [];
   const ownOptions = [...own, ...keepOwn];
   const expenseNames = (counterparties.data ?? []).filter((a) => a.type === 'expense').map((a) => a.name);
   const revenueNames = (counterparties.data ?? []).filter((a) => a.type === 'revenue').map((a) => a.name);
@@ -167,11 +167,20 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
       <label htmlFor={id}>{label}</label>
       <select id={id} className="inp" value={value} onChange={(e) => onChange(e.target.value)} required>
         <option value="">Choose an account…</option>
-        {ownOptions.map((a) => (
+        {ownOptions.filter((a) => a.type !== 'credit_card').map((a) => (
           <option key={a.id} value={a.id}>
             {a.name}
           </option>
         ))}
+        {ownOptions.some((a) => a.type === 'credit_card') && (
+          <optgroup label="Credit cards">
+            {ownOptions.filter((a) => a.type === 'credit_card').map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}{'account_number' in a && a.account_number ? ` ··${a.account_number}` : ''}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
       {accounts.data && own.length === 0 && <div className="hint">No accounts yet — add one on the Accounts page first.</div>}
     </div>

@@ -17,6 +17,9 @@ from ..accounts.models import Account, AccountType
 from ..cards.emi import CONVERSION_RE, GST_RE, INTEREST_RE, PRINCIPAL_RE, match_plan, plans_of
 from ..cards.models import CardEmi
 from ..categories.models import Category
+from ..loans.actions import match_loan
+from ..loans.models import Loan
+from ..loans.service import loan_out
 from ..transactions.models import Transaction
 from .models import StatementImport, StatementRow
 
@@ -265,18 +268,23 @@ def _suggest(
     row: StatementRow,
     plans: list[CardEmi] | None = None,
     interest_days: dict | None = None,
+    loans: list | None = None,
 ) -> None:
     """Kind, category and transfer account for a row you haven't edited."""
     row.payee = payee_from(row.description, row.counterparty, row.name_hint)
     row.flag = None
     row.transfer_account_id = None
     row.emi_id = None
+    row.loan_id = row.loan_action = None
     card = account is not None and account.type == AccountType.credit_card
     if card:
         if row.amount > 0 and TRANSFER_RE.search(row.raw):
             row.kind = "transfer"
         else:
             row.kind = "income" if row.amount > 0 else "expense"
+    elif row.amount < 0 and loans and (hit := match_loan(row.raw, -row.amount, loans)):
+        loan, action = hit
+        row.kind, row.loan_id, row.loan_action = "expense", loan.id, action
     elif TRANSFER_RE.search(row.raw) or (row.amount < 0 and CARD_APP_RE.search(row.raw)):
         row.kind = "transfer"
     else:
@@ -292,6 +300,15 @@ def _suggest(
     if row.kind == "transfer" and account is not None:
         row.transfer_account_id, tw = suggest_transfer_account(db, account, row)
         why, kind = tw, ("card" if tw else None)
+    if row.loan_id:
+        loan = next(ln for ln, _ in loans or [] if ln.id == row.loan_id)
+        cat, bud, kind = _category_id(db, "Loan / EMI"), None, "loan"
+        split = " — split into principal and interest on import" if loan.count_mode == "interest_only" else ""
+        why = (
+            f"EMI · {loan.account.name}{split}"
+            if row.loan_action == "emi"
+            else f"Part-payment on {loan.account.name}? — the EMI stays and the loan ends sooner"
+        )
     row.category_id, row.budget_id, row.suggestion, row.suggestion_kind = cat, bud, why, kind
     if card and _emi_rows(row, plans or [], interest_days if interest_days is not None else {}):
         return
@@ -307,11 +324,17 @@ def refresh(db: Session, imp: StatementImport) -> None:
     on_card = account is not None and account.type == AccountType.credit_card
     plans = plans_of(db, account.id) if on_card else []
     interest_days: dict = {}
+    loans = []
+    if account is not None and not on_card:
+        for ln in db.scalars(select(Loan).where(Loan.closed_on.is_(None))).unique():
+            out = loan_out(db, ln)
+            if out.status == "active":
+                loans.append((ln, out.current_emi))
     for row in imp.rows:
         if row.transaction_id:  # already imported
             continue
         if not row.user_set:
-            _suggest(db, account, row, plans, interest_days)
+            _suggest(db, account, row, plans, interest_days, loans)
             row.link_txn_id = None
         row.duplicate_of = None
         # a conversion already recorded when the EMI was added on the card page

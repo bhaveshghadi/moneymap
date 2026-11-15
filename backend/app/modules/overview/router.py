@@ -12,6 +12,7 @@ from ..budgets.service import budgets_for_month
 from ..cards.service import all_cards, card_dues
 from ..categories.models import Category
 from ..emergency.service import summary as emergency_summary
+from ..loans.service import all_loans, loan_dues
 from ..transactions.models import Transaction, TransactionType
 from ..transactions.service import txn_out
 from .schemas import CategorySpend, Overview
@@ -67,11 +68,13 @@ def overview(month: str | None = None, db: Session = Depends(get_db)) -> Overvie
     budgets = [b for b in budgets_for_month(db, label, active_only=True).budgets if b.limit is not None or b.spent]
     cards_owed = sum(c.owed + c.emi_outstanding for c in all_cards(db, include_inactive=False))
     is_current = label == month_bounds(None)[2]
+    loans_owed = sum(x.outstanding for x in all_loans(db, active_only=True))
     recent = db.scalars(select(Transaction).order_by(Transaction.date.desc(), Transaction.id.desc()).limit(8)).unique()
     return Overview(
         month=label,
-        net_worth=sum(a.balance for a in accounts) - cards_owed,
+        net_worth=sum(a.balance for a in accounts) - cards_owed - loans_owed,
         cards_owed=cards_owed,
+        loans_owed=loans_owed,
         income=totals.get(TransactionType.deposit.value, 0),
         spending=totals.get(TransactionType.withdrawal.value, 0),
         accounts=accounts,
@@ -82,4 +85,5 @@ def overview(month: str | None = None, db: Session = Depends(get_db)) -> Overvie
         emergency=emergency_summary(db),
         upcoming_bills=upcoming(db, days=30) if is_current else [],
         card_dues=card_dues(db, days=30) if is_current else [],
+        loan_dues=loan_dues(db, days=30) if is_current else [],
     )

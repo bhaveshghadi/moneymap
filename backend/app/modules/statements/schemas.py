@@ -52,6 +52,8 @@ class StatementRowOut(ORM):
     link: TransactionOut | None = None
     flag: str | None = None  # emi: an EMI row with no plan to match yet
     emi_id: int | None = None  # the card EMI it belongs to
+    loan_id: int | None = None  # bank statement: a loan's EMI or part-payment (recorded on import)
+    loan_action: str | None = None  # emi | prepay
     transaction_id: int | None
     status: str = ""
 
@@ -133,6 +135,7 @@ class StatementRowPatch(BaseModel):
     transfer_account_id: int | None = None
     leave_uncategorised: bool | None = None
     link_txn_id: int | None = None  # only null: import the payment row as a new transfer instead
+    loan_id: int | None = None  # only null: import it as a plain expense, not as the loan's EMI / part-payment
 
 
 class StatementImportOut(BaseModel):

@@ -22,6 +22,8 @@ from ..cards.models import CreditCard
 from ..categories.models import Category
 from ..gmail.fetch import attachments_dir
 from ..gmail.models import GmailAttachment
+from ..loans.actions import link_payments, record_prepay
+from ..loans.models import Loan
 from ..transactions.models import Transaction, TransactionType
 from ..transactions.schemas import TransactionIn
 from ..transactions.service import apply_body, sync_inbox_status, txn_out
@@ -574,6 +576,10 @@ def edit_row(sid: int, rid: int, body: StatementRowPatch, db: Session = Depends(
         raise _bad("Money coming in is income and money going out is an expense — or choose transfer.")
     if "link_txn_id" in data and data["link_txn_id"] is not None:
         raise _bad("A link can only be removed here.")
+    if "loan_id" in data and data["loan_id"] is not None:
+        raise _bad("A loan link can only be removed here.")
+    if "loan_id" in data:
+        row.loan_action = None
     for k, v in data.items():
         setattr(row, k, v)
     # the link to an existing expense only holds for a transfer from that expense's account
@@ -717,6 +723,12 @@ def do_import(sid: int, db: Session = Depends(get_db)) -> StatementImportOut:
         db.add(t)
         db.flush()
         row.transaction_id = t.id
+        if row.loan_id and row.kind == "expense" and (loan := db.get(Loan, row.loan_id)) is not None:
+            # a loan's EMI (split for interest-only loans) or a part-payment on it
+            if row.loan_action == "emi":
+                link_payments(db, loan, [t])
+            else:
+                record_prepay(db, loan, t.date, t.amount, "reduce_tenure", existing=t)
         imported += 1
 
     imp.imported_count += imported

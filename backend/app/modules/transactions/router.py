@@ -26,6 +26,7 @@ def _filtered(
     budget_id: int | None,
     no_budget: bool,
     bill_id: int | None,
+    loan_id: int | None,
     tag: str | None,
     date_from: date | None,
     date_to: date | None,
@@ -48,6 +49,8 @@ def _filtered(
         q = q.where(Transaction.budget_id == budget_id)
     if bill_id:
         q = q.where(Transaction.bill_id == bill_id)
+    if loan_id:  # a loan's EMIs, interest and money received (the loan's id, not its account's)
+        q = q.where(Transaction.loan_id == loan_id)
     if tag:
         q = q.where(Transaction.tags.any(func.lower(Tag.name) == tag.lower()))
     if date_from:
@@ -84,6 +87,7 @@ def list_transactions(
     budget_id: int | None = None,
     no_budget: bool = False,
     bill_id: int | None = None,
+    loan_id: int | None = None,
     tag: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
@@ -102,6 +106,7 @@ def list_transactions(
         budget_id=budget_id,
         no_budget=no_budget,
         bill_id=bill_id,
+        loan_id=loan_id,
         tag=tag,
         date_from=date_from,
         date_to=date_to,

@@ -73,6 +73,7 @@ export const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
   cash: 'Cash',
   credit_card: 'Credit card',
   emi_plan: 'Card EMI',
+  loan: 'Loan',
   expense: 'Expense account',
   revenue: 'Revenue account',
 };
@@ -82,6 +83,7 @@ export const ACCOUNT_TYPE_ICON: Record<AccountType, { icon: string; color: strin
   cash: { icon: 'banknote', color: 'mint' },
   credit_card: { icon: 'credit-card', color: 'purple' },
   emi_plan: { icon: 'calendar-range', color: 'purple' },
+  loan: { icon: 'hand-coins', color: 'coral' },
   expense: { icon: 'shopping-cart', color: 'slate' },
   revenue: { icon: 'briefcase', color: 'mint' },
 };

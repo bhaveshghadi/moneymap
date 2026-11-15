@@ -114,7 +114,7 @@ export function EmergencyFundCard({ onMove }: { onMove: (piggy: Piggy, dir: 'add
       ? 'the monthly amount you set'
       : data.monthly_source === 'none'
         ? 'no essential spending recorded yet'
-        : `typical month over the last ${data.months_of_data} month${data.months_of_data === 1 ? '' : 's'}${data.monthly_source === 'estimate' ? ' (estimate — little history)' : ''}`;
+        : `typical month over the last ${data.months_of_data} month${data.months_of_data === 1 ? '' : 's'}${data.monthly_source === 'estimate' ? ' (estimate — little history)' : ''}${data.loan_emis > 0 ? ', loan EMIs included' : ''}`;
   const maxMonth = Math.max(1, ...data.history.map((h) => h.amount));
   // The months behind the typical month, as a transactions filter.
   const range =
@@ -245,6 +245,12 @@ export function EmergencyFundCard({ onMove }: { onMove: (piggy: Piggy, dir: 'add
               <div style={{ fontSize: 12.5 }}>
                 <Link href={`/transactions?essential=1&${range}`}>See these transactions</Link>
               </div>
+            </div>
+          )}
+          {data.loan_emis > 0 && (
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              Loan EMIs: <Money amount={rs(data.loan_emis)} interactive={false} /> a month, added to the typical month (you have to
+              pay them even without income) · <Link href="/loans">Loans</Link>
             </div>
           )}
           <div className="muted" style={{ fontSize: 12.5 }}>

@@ -16,6 +16,7 @@ from .modules.emergency.router import router as emergency_router
 from .modules.gmail.fetch import recover_stuck_runs
 from .modules.gmail.inbox_router import router as inbox_router
 from .modules.gmail.router import router as gmail_router
+from .modules.loans.router import router as loans_router
 from .modules.overview.router import router as overview_router
 from .modules.piggybanks.router import router as piggybanks_router
 from .modules.reset.router import router as reset_router
@@ -53,6 +54,7 @@ for r in (
     emergency_router,
     cards_router,
     emi_router,
+    loans_router,
     gmail_router,
     inbox_router,
     statements_router,

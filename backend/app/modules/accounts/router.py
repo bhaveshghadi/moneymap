@@ -49,7 +49,7 @@ def _check_unique(db: Session, name: str, type_: str, exclude_id: int | None = N
 @router.post("", response_model=AccountOut, status_code=201)
 def create_account(body: AccountIn, db: Session = Depends(get_db)) -> AccountOut:
     if body.type in CARD_TYPES:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Add credit cards and EMIs on the Credit cards page.")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Add cards, EMIs and loans on their own pages.")
     _check_unique(db, body.name, body.type)
     data = body.model_dump()
     if body.type in COUNTERPARTY:
@@ -71,7 +71,7 @@ def get_account(account_id: int, db: Session = Depends(get_db)) -> AccountOut:
 def update_account(account_id: int, body: AccountPatch, db: Session = Depends(get_db)) -> AccountOut:
     a = _get(db, account_id)
     if a.type in CARD_TYPES:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Change cards and EMIs on the Credit cards page.")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Change cards, EMIs and loans on their own pages.")
     data = body.model_dump(exclude_unset=True)
     new_type = data.pop("type", None) or a.type
     # Balances work the same way for bank and cash, so their transactions stay valid on a switch.
@@ -99,7 +99,7 @@ def update_account(account_id: int, body: AccountPatch, db: Session = Depends(ge
 def delete_account(account_id: int, db: Session = Depends(get_db)) -> None:
     a = _get(db, account_id)
     if a.type in CARD_TYPES:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Delete cards and EMIs on the Credit cards page.")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Delete cards, EMIs and loans on their own pages.")
     used = db.scalar(
         select(func.count())
         .select_from(Transaction)

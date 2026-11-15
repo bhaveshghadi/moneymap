@@ -7,7 +7,7 @@ export interface AuthStatus {
 }
 
 // Credit cards and loans come later as their own features.
-export type AccountType = 'asset' | 'cash' | 'credit_card' | 'emi_plan' | 'expense' | 'revenue';
+export type AccountType = 'asset' | 'cash' | 'credit_card' | 'emi_plan' | 'loan' | 'expense' | 'revenue';
 export type TxnType = 'withdrawal' | 'deposit' | 'transfer';
 
 export interface AccountRef {
@@ -122,8 +122,104 @@ export interface Overview {
   budgets: Budget[]; // the month's active budgets with an amount or spending
   upcoming_bills: BillDue[]; // overdue + due in the next 30 days (current month only)
   cards_owed: number; // outstanding on active credit cards (already taken off net_worth)
+  loans_owed: number; // what's left on active loans (already taken off net_worth)
+  loan_dues: LoanDue[]; // next loan EMIs, overdue or in the next 30 days
   card_dues: CardDue[]; // card statements overdue or due in the next 30 days (current month only)
   emergency: EmergencySummary | null; // once the emergency fund is set up
+}
+
+// ---------- loans (F14)
+
+export type LoanMethod = 'reducing' | 'flat' | 'emi_only';
+export type LoanFirstInterest = 'month' | 'days365' | 'days360';
+export type LoanCountMode = 'whole_emi' | 'interest_only';
+export type LoanKind = 'home' | 'car' | 'two_wheeler' | 'personal' | 'education' | 'gold' | 'property' | 'consumer' | 'other';
+
+export interface LoanRow {
+  n: number;
+  date: string;
+  emi: number;
+  principal: number;
+  interest: number;
+  balance: number;
+  paid: boolean;
+}
+
+export interface Loan {
+  id: number; // the loan's account id
+  loan_id: number;
+  name: string;
+  lender: string | null;
+  kind: LoanKind;
+  loan_number: string | null;
+  method: LoanMethod;
+  count_mode: LoanCountMode;
+  principal: number | null;
+  rate: number | null;
+  current_rate: number | null; // after rate changes
+  rate_worked_out: boolean;
+  tenure: number;
+  emi: number;
+  current_emi: number; // after part-payments / rate changes
+  first_emi_date: string;
+  disbursed_date: string | null;
+  first_interest: LoanFirstInterest; // EMI 1: a month's interest, or the days since disbursed_date
+  first_interest_days: number | null; // days counted in EMI 1
+  last_emi_off: boolean; // the last EMI is > 2% away from the EMI (reducing, no changes)
+  first_interest_suggestion: LoanFirstInterest | null; // the first-EMI interest that makes it fit
+  end_date: string;
+  pay_from_id: number | null;
+  pay_from_name: string | null;
+  paid_before: number;
+  paid_count: number;
+  prepaid: number;
+  outstanding: number;
+  total_interest: number;
+  total_payable: number;
+  interest_paid: number;
+  next: { n: number; date: string; emi: number; principal: number; interest: number; overdue: boolean } | null;
+  status: 'active' | 'closed';
+  closed_on: string | null;
+  notes: string | null;
+  supports_changes: boolean; // part-payments / rate changes (reducing balance)
+  events: LoanEvent[];
+}
+
+export interface LoanEvent {
+  id: number;
+  kind: 'prepay' | 'rate';
+  date: string;
+  mode: 'reduce_tenure' | 'reduce_emi';
+  amount: number | null;
+  rate: number | null;
+  before_n: number | null;
+  emi_after: number | null;
+  txn_id: number | null;
+}
+
+export interface LoanDetail extends Loan {
+  schedule: LoanRow[];
+}
+
+export interface LoanLinkable {
+  transaction_id: number;
+  date: string;
+  amount: number;
+  description: string;
+  paid_from: string;
+  category: string | null;
+  emi_like: boolean;
+  suggested: boolean;
+}
+
+export interface LoanDue {
+  loan_id: number;
+  name: string;
+  date: string;
+  amount: number;
+  n: number;
+  tenure: number;
+  overdue: boolean;
 }
 
 // ---------- credit cards (F17)
@@ -319,6 +415,7 @@ export interface Emergency {
   months_of_data: number;
   history: EmergencyMonth[]; // oldest first
   essential_categories: string[];
+  loan_emis: number; // EMIs of active loans, included in the typical month
   breakdown: EmergencyCategory[]; // biggest first, over the months in history
   one_offs: EmergencyOneOff[]; // single big payments that skew their month, biggest first
   estimates: EmergencyEstimate[]; // typical month for each averaging window (3, 6, 12) — for live previews
@@ -452,13 +549,15 @@ export interface StatementRow {
   leave_uncategorised: boolean;
   user_set: boolean;
   suggestion: string | null;
-  suggestion_kind: 'history' | 'card' | 'link' | 'emi' | null;
+  suggestion_kind: 'history' | 'card' | 'link' | 'emi' | 'loan' | null;
   duplicate_of: number | null;
   duplicate: Txn | null;
   link_txn_id: number | null; // card payment: this bank-side expense becomes the transfer on import
   link: Txn | null;
   flag: 'emi' | null;
   emi_id: number | null;
+  loan_id: number | null; // bank statement: a loan's EMI / part-payment (recorded on import)
+  loan_action: 'emi' | 'prepay' | null;
   transaction_id: number | null;
   status: StatementRowStatus;
 }

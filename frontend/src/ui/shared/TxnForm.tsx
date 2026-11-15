@@ -102,7 +102,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
   // Inactive accounts are hidden, except the one this transaction already uses.
   const own = accounts.data ?? [];
-  const keepOwn = txn ? [txn.source, txn.destination].filter((a) => ['asset', 'cash', 'credit_card', 'emi_plan'].includes(a.type) && !own.some((o) => o.id === a.id)) : [];
+  const keepOwn = txn ? [txn.source, txn.destination].filter((a) => ['asset', 'cash', 'credit_card', 'emi_plan', 'loan'].includes(a.type) && !own.some((o) => o.id === a.id)) : [];
   const ownOptions = [...own, ...keepOwn];
   const expenseNames = (counterparties.data ?? []).filter((a) => a.type === 'expense').map((a) => a.name);
   const revenueNames = (counterparties.data ?? []).filter((a) => a.type === 'revenue').map((a) => a.name);

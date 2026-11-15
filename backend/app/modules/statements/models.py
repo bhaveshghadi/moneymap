@@ -93,5 +93,10 @@ class StatementRow(Base):
     emi_id: Mapped[int | None] = mapped_column(
         ForeignKey("card_emi.id", ondelete="SET NULL", name="fk_statement_row_emi_id_card_emi")
     )  # the card EMI this row belongs to (instalment, interest, GST, conversion)
+    # Bank statement: this row is a loan's EMI or a part-payment on it (recorded on import).
+    loan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("loan.id", ondelete="SET NULL", name="fk_statement_row_loan_id_loan")
+    )
+    loan_action: Mapped[str | None] = mapped_column(String(8))  # emi | prepay
 
     statement: Mapped[StatementImport] = relationship(back_populates="rows")

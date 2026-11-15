@@ -58,9 +58,14 @@ def test_0013_adds_card_fee_category_to_existing_categories():
     with tempfile.TemporaryDirectory() as d:
         assert _alembic(d, "upgrade", "0012_credit_cards").returncode == 0
         _sql(d, "INSERT INTO category (name, kind, icon, color, essential) VALUES ('Rent', 'expense', 'key', 'indigo', 1);")
-        r = _alembic(d, "upgrade", "head")
+        r = _alembic(d, "upgrade", "0013_card_statements")
         assert r.returncode == 0, r.stderr
         db = sqlite3.connect(Path(d) / "moneymap.db")
         names = [n for (n,) in db.execute("SELECT name FROM category ORDER BY id")]
         db.close()
         assert names == ["Rent", "Card Fees & Interest"]
+        r = _alembic(d, "upgrade", "head")  # 0015 adds Loan Interest the same way
+        assert r.returncode == 0, r.stderr
+        db = sqlite3.connect(Path(d) / "moneymap.db")
+        assert [n for (n,) in db.execute("SELECT name FROM category ORDER BY id")][-1] == "Loan Interest"
+        db.close()

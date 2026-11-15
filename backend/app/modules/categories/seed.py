@@ -59,6 +59,7 @@ DEFAULT_CATEGORIES: list[tuple[str, str, str, str]] = [
     ("Gifts Given", "expense", "gift", "coral"),
     ("Charity", "expense", "heart-handshake", "coral"),
     ("Loan / EMI", "expense", "landmark", "coral"),
+    ("Loan Interest", "expense", "percent", "coral"),
     ("Taxes", "expense", "scale", "slate"),
     ("Bank Charges & Fees", "expense", "receipt", "red"),
     ("Card Fees & Interest", "expense", "percent", "red"),

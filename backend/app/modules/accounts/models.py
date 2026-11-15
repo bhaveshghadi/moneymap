@@ -12,6 +12,7 @@ class AccountType(enum.StrEnum):
     cash = "cash"  # physical cash
     credit_card = "credit_card"  # balance below zero = owed on the card (details in modules/cards)
     emi_plan = "emi_plan"  # a card EMI: balance below zero = principal still to pay (modules/cards/emi.py)
+    loan = "loan"  # a loan (modules/loans); what is left comes from its schedule
     expense = "expense"  # where money goes (merchants, payees)
     revenue = "revenue"  # where money comes from (employer, refunds)
 
@@ -21,9 +22,9 @@ class AccountType(enum.StrEnum):
 BALANCE_TYPES = {AccountType.asset, AccountType.cash}
 # Your own accounts that transactions can use: bank, cash and credit cards. Spending on a
 # card is an expense from the card; paying the bill is a transfer bank -> card.
-OWN_TYPES = BALANCE_TYPES | {AccountType.credit_card, AccountType.emi_plan}
+OWN_TYPES = BALANCE_TYPES | {AccountType.credit_card, AccountType.emi_plan, AccountType.loan}
 # Made and changed on the Credit cards page only.
-CARD_TYPES = {AccountType.credit_card, AccountType.emi_plan}
+CARD_TYPES = {AccountType.credit_card, AccountType.emi_plan, AccountType.loan}  # + loans (Loans page)
 
 
 class Account(Base):

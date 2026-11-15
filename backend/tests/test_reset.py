@@ -40,7 +40,7 @@ def test_reset_data_keeps_login_and_settings(client, bank):
     assert client.get("/api/budgets").json()["budgets"] == []
     assert client.get("/api/transactions").json()["total"] == 0
     cats = client.get("/api/categories").json()
-    assert len(cats) == 52 and "My own" not in {c["name"] for c in cats}  # starter list again
+    assert len(cats) == 53 and "My own" not in {c["name"] for c in cats}  # starter list again
     with SessionLocal() as db:
         assert db.get(Setting, "theme").value == "dark"
 
@@ -55,5 +55,5 @@ def test_reset_everything_is_factory_reset(client, bank):
         assert db.query(Setting).count() == 0
     # first-run setup works again and adds the starter categories
     assert client.post("/api/auth/setup", json={"username": "new", "password": "another-pass"}).status_code == 200
-    assert len(client.get("/api/categories").json()) == 52
+    assert len(client.get("/api/categories").json()) == 53
     assert client.get("/api/accounts").json() == []

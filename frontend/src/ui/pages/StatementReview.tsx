@@ -559,6 +559,15 @@ function Row({
             <span className="muted">An EMI row with no EMI to match — add the EMI on the card&apos;s page, then Re-read; or untick to skip.</span>
           </div>
         )}
+        {r.loan_id && !locked && (
+          <div style={{ fontSize: 11.5, marginTop: 3 }}>
+            <span className="badge coral">{r.loan_action === 'emi' ? 'Loan EMI' : 'Part-payment?'}</span>{' '}
+            <span className="muted">{r.suggestion}</span>{' '}
+            <button type="button" className="link-btn" style={{ fontSize: 11.5 }} onClick={() => onPatch({ loan_id: null })}>
+              Not this loan
+            </button>
+          </div>
+        )}
         {r.emi_id && r.suggestion_kind === 'emi' && !locked && (
           <div style={{ fontSize: 11.5, marginTop: 3 }}>
             <span className="badge brand">EMI</span> <span className="muted">{r.suggestion} — paying back the EMI, not new spending.</span>

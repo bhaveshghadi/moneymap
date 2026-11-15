@@ -116,7 +116,16 @@ export function OverviewPage() {
           lbl="Net worth"
           icon="scale"
           val={<Money amount={rs(data.net_worth)} compact pos={data.net_worth >= 0} sign={data.net_worth < 0} />}
-          sub={data.cards_owed > 0 ? <>Bank and cash minus <Money amount={rs(data.cards_owed)} interactive={false} /> owed on cards</> : 'Bank and cash today'}
+          sub={
+            data.cards_owed + data.loans_owed > 0 ? (
+              <>
+                Bank and cash minus <Money amount={rs(data.cards_owed + data.loans_owed)} interactive={false} /> owed on
+                {data.cards_owed > 0 && data.loans_owed > 0 ? ' cards and loans' : data.loans_owed > 0 ? ' loans' : ' cards'}
+              </>
+            ) : (
+              'Bank and cash today'
+            )
+          }
         />
         <StatCard
           lbl="Income"
@@ -218,6 +227,28 @@ export function OverviewPage() {
               </div>
               <Progress value={data.emergency.saved} max={data.emergency.target} savings />
             </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {data.loan_dues.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <SectionCard title="Loan EMIs due" action={{ label: 'All loans', href: '/loans' }}>
+            {data.loan_dues.map((d) => (
+              <Row
+                key={d.loan_id}
+                href={`/loans/${d.loan_id}`}
+                glyph={<CategoryGlyph icon="hand-coins" color={d.overdue ? 'red' : 'coral'} size={34} />}
+                title={d.name}
+                sub={`EMI ${d.n} of ${d.tenure} · ${fmtDate(d.date)} · ${dueText(d.date)}`}
+                right={
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                    <Money amount={rs(d.amount)} interactive={false} />
+                    <span className={`badge ${d.overdue ? 'red' : 'cau'}`}>{d.overdue ? 'Not recorded' : 'Due'}</span>
+                  </span>
+                }
+              />
+            ))}
           </SectionCard>
         </div>
       )}

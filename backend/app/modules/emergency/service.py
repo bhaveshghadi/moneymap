@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ...core.dates import add_months
 from ..categories.models import Category
+from ..loans.service import monthly_emis
 from ..piggybanks.models import PiggyBank
 from ..piggybanks.router import monthly_needed, piggy_out, saved_map
 from ..transactions.models import Transaction, TransactionType
@@ -62,6 +63,8 @@ def essential_history(db: Session, average_months: int, today: date | None = Non
             .where(
                 Transaction.type == TransactionType.withdrawal.value,
                 Category.essential.is_(True),
+                Transaction.loan_id.is_(None),
+                Transaction.loan_id.is_(None),  # loan EMIs are added from the loans themselves
                 Transaction.date >= start,
                 Transaction.date < this_month,
             )
@@ -96,6 +99,7 @@ def breakdown(db: Session, history: list[EmergencyMonth]) -> list[EmergencyCateg
         .where(
             Transaction.type == TransactionType.withdrawal.value,
             Category.essential.is_(True),
+            Transaction.loan_id.is_(None),
             Transaction.date >= w[0],
             Transaction.date < w[1],
         )
@@ -177,11 +181,19 @@ def typical_month(history: list[EmergencyMonth]) -> tuple[int, str]:
     return median([h.amount for h in history]), "median" if len(history) >= MIN_MONTHS_FOR_MEDIAN else "estimate"
 
 
+def with_loans(amount: int, source: str, loans: int) -> tuple[int, str]:
+    """Add the EMIs of active loans (an essential monthly cost) to a typical month."""
+    if loans <= 0:
+        return amount, source
+    return amount + loans, ("estimate" if source == "none" else source)
+
+
 def estimates(db: Session, today: date | None = None) -> list[EmergencyEstimate]:
     out = []
+    loans = monthly_emis(db)
     for n in AVERAGE_CHOICES:
         h = essential_history(db, n, today)
-        amount, source = typical_month(h)
+        amount, source = with_loans(*typical_month(h), loans)
         out.append(EmergencyEstimate(average_months=n, monthly=amount, source=source, months_of_data=len(h)))
     return out
 
@@ -210,13 +222,19 @@ def compute(db: Session, today: date | None = None) -> EmergencyOut:
         )
     )
     if cfg is None or piggy is None:
-        return EmergencyOut(configured=False, essential_categories=essentials, estimates=estimates(db, today))
+        return EmergencyOut(
+            configured=False,
+            essential_categories=essentials,
+            estimates=estimates(db, today),
+            loan_emis=monthly_emis(db),
+        )
 
     history = essential_history(db, cfg.average_months, today)
+    loans = monthly_emis(db)
     if cfg.monthly_override is not None:
         monthly, source = cfg.monthly_override, "override"
     else:
-        monthly, source = typical_month(history)
+        monthly, source = with_loans(*typical_month(history), loans)
     target = monthly * cfg.months_cover
 
     if piggy.target_amount != target:
@@ -236,6 +254,7 @@ def compute(db: Session, today: date | None = None) -> EmergencyOut:
         months_of_data=len(history),
         history=history,
         essential_categories=essentials,
+        loan_emis=loans,
         breakdown=breakdown(db, history),
         one_offs=one_offs(db, history),
         estimates=estimates(db, today),

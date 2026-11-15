@@ -39,6 +39,7 @@ export function TransactionsPage() {
     budget: sp.get('budget') ?? '',
     no_budget: sp.get('no_budget') ?? '',
     bill: sp.get('bill') ?? '',
+    loan: sp.get('loan') ?? '', // a loan's EMIs (loan id)
     tag: sp.get('tag') ?? '',
     from: sp.get('from') ?? '',
     to: sp.get('to') ?? '',
@@ -79,6 +80,7 @@ export function TransactionsPage() {
     budget_id: filters.budget,
     no_budget: filters.no_budget ? true : undefined,
     bill_id: filters.bill,
+    loan_id: filters.loan,
     tag: filters.tag,
     date_from: filters.from,
     date_to: filters.to,
@@ -134,8 +136,8 @@ export function TransactionsPage() {
   }, [page]);
 
 
-  const ownAccounts = (accounts.data ?? []).filter((a) => ['asset', 'cash', 'credit_card', 'emi_plan'].includes(a.type));
-  const otherAccounts = (accounts.data ?? []).filter((a) => !['asset', 'cash', 'credit_card', 'emi_plan'].includes(a.type));
+  const ownAccounts = (accounts.data ?? []).filter((a) => ['asset', 'cash', 'credit_card', 'emi_plan', 'loan'].includes(a.type));
+  const otherAccounts = (accounts.data ?? []).filter((a) => !['asset', 'cash', 'credit_card', 'emi_plan', 'loan'].includes(a.type));
   const activeFilters = Object.entries(filters).some(([k, v]) => v && k !== 'type');
   const selectedAccount = accounts.data?.find((a) => String(a.id) === filters.account);
 
@@ -263,6 +265,14 @@ export function TransactionsPage() {
         </select>
         <input className="inp" type="date" aria-label="From date" value={filters.from} onChange={(e) => setFilter({ from: e.target.value })} />
         <input className="inp" type="date" aria-label="To date" value={filters.to} onChange={(e) => setFilter({ to: e.target.value })} />
+        {filters.loan && (
+          <span className="badge coral" style={{ fontSize: 12.5, padding: '6px 10px' }}>
+            Loan EMIs
+            <button type="button" aria-label="Remove loan filter" onClick={() => setFilter({ loan: '' })} style={{ all: 'unset', cursor: 'pointer', marginLeft: 6 }}>
+              ×
+            </button>
+          </span>
+        )}
         {filters.bill && (
           <span className="badge coral" style={{ fontSize: 12.5, padding: '6px 10px' }}>
             Bill · {bills.data?.find((b) => String(b.id) === filters.bill)?.name ?? filters.bill}

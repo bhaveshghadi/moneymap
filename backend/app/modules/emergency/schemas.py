@@ -63,6 +63,7 @@ class EmergencyOut(BaseModel):
     months_of_data: int = 0  # complete months with history that were used
     history: list[EmergencyMonth] = []  # oldest first
     essential_categories: list[str] = []
+    loan_emis: int = 0  # EMIs of active loans, included in the typical month
     breakdown: list[EmergencyCategory] = []  # biggest first, over the months in `history`
     one_offs: list[EmergencyOneOff] = []  # biggest first
     estimates: list[EmergencyEstimate] = []  # typical month for each averaging window (3, 6, 12)

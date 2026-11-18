@@ -366,11 +366,16 @@ def test_apply_category_to_same_payee_rows(client, icici):
 
 
 
-def test_cas_is_refused_for_now(client):
+def test_cas_opens_in_investments(client):
     att = add_email(["Consolidated Account Statement", "CAMS", "Folio No: 12345678", "01-11-2026 Purchase 5,000.00"],
                     mid="cas1", password=None)
     r = client.post("/api/statements", json={"attachment_id": att})
-    assert r.status_code == 422 and r.json()["detail"]["code"] == "is_cas"
+    detail = r.json()["detail"]
+    assert r.status_code == 422 and detail["code"] == "cas" and detail["cas_id"]
+    # opening it again finds the same draft
+    again = client.post("/api/statements", json={"attachment_id": att}).json()["detail"]
+    assert again["cas_id"] == detail["cas_id"]
+    assert client.get(f"/api/investments/cas/{detail['cas_id']}").status_code == 200
 
 
 def test_remembered_password_is_encrypted(client, icici):

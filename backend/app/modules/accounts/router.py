@@ -49,7 +49,9 @@ def _check_unique(db: Session, name: str, type_: str, exclude_id: int | None = N
 @router.post("", response_model=AccountOut, status_code=201)
 def create_account(body: AccountIn, db: Session = Depends(get_db)) -> AccountOut:
     if body.type in CARD_TYPES:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Add cards, EMIs and loans on their own pages.")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Add cards, EMIs, loans and investments on their own pages."
+        )
     _check_unique(db, body.name, body.type)
     data = body.model_dump()
     if body.type in COUNTERPARTY:

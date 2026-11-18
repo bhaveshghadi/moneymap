@@ -18,6 +18,8 @@ import { TxnRow } from '../shared/TxnRow';
 import { BillBadge, Progress } from '../shared/Progress';
 import { EmergencyBadge, coverText } from '../shared/EmergencyFundCard';
 import { CycleBadge } from '../shared/CardForm';
+import { KIND_META } from '../shared/InvestmentForm';
+import { GainText, dueWhen } from './Investments';
 
 function Row({ href, glyph, title, sub, right }: { href: string; glyph: ReactNode; title: ReactNode; sub: ReactNode; right: ReactNode }) {
   return (
@@ -119,9 +121,12 @@ export function OverviewPage() {
           sub={
             data.cards_owed + data.loans_owed > 0 ? (
               <>
-                Bank and cash minus <Money amount={rs(data.cards_owed + data.loans_owed)} interactive={false} /> owed on
+                {data.investments_count > 0 ? 'Bank, cash and investments' : 'Bank and cash'} minus{' '}
+                <Money amount={rs(data.cards_owed + data.loans_owed)} interactive={false} /> owed on
                 {data.cards_owed > 0 && data.loans_owed > 0 ? ' cards and loans' : data.loans_owed > 0 ? ' loans' : ' cards'}
               </>
+            ) : data.investments_count > 0 ? (
+              'Bank, cash and investments today'
             ) : (
               'Bank and cash today'
             )
@@ -227,6 +232,39 @@ export function OverviewPage() {
               </div>
               <Progress value={data.emergency.saved} max={data.emergency.target} savings />
             </div>
+          </SectionCard>
+        </div>
+      )}
+
+      {data.investments_count > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <SectionCard title="Investments" action={{ label: 'Open', href: '/investments' }}>
+            <div className="catrow" style={{ display: 'block' }}>
+              <div className="top">
+                <span className="nm">
+                  <span className="fig"><Money amount={rs(data.investments_value)} interactive={false} /></span>
+                  <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>
+                    value today · {data.investments_count} investment{data.investments_count === 1 ? '' : 's'}
+                  </span>
+                </span>
+                <span style={{ fontSize: 13 }}>
+                  <GainText
+                    gain={data.investments_value - data.investments_invested}
+                    pct={data.investments_invested > 0 ? ((data.investments_value - data.investments_invested) * 100) / data.investments_invested : null}
+                  />
+                </span>
+              </div>
+            </div>
+            {data.investment_dues.map((d) => (
+              <Row
+                key={`${d.account_id}-${d.what}-${d.date}`}
+                href={`/investments/${d.account_id}`}
+                glyph={<CategoryGlyph icon={KIND_META[d.kind].icon} color={d.overdue ? 'red' : KIND_META[d.kind].color} size={34} />}
+                title={d.name}
+                sub={`${dueWhen(d)} · ${fmtDate(d.date)}`}
+                right={<Money amount={rs(d.amount)} interactive={false} />}
+              />
+            ))}
           </SectionCard>
         </div>
       )}

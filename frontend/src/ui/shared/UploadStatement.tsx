@@ -22,18 +22,16 @@ function toBase64(file: File): Promise<string> {
 }
 
 /** Upload a statement PDF downloaded from the bank's website → review page.
- * (A mutual fund CAS is refused with a message — that comes with Investments.) */
-export function UploadStatement({ onClose }: { onClose: () => void }) {
+ * A mutual fund CAS (from here or from Investments → Import CAS) opens the CAS review. */
+export function UploadStatement({ onClose, cas = false }: { onClose: () => void; cas?: boolean }) {
   return (
-    <Dialog onClose={onClose} label="Upload statement" width={500}>
-      <Body />
+    <Dialog onClose={onClose} label={cas ? 'Import CAS' : 'Upload statement'} width={500}>
+      <Body cas={cas} />
     </Dialog>
   );
 }
 
-const cas = false; // CAS mode returns with the Investments feature
-
-function Body() {
+function Body({ cas }: { cas: boolean }) {
   const close = useDialogClose();
   const router = useRouter();
   const { bump } = useShell();
@@ -79,7 +77,8 @@ function Body() {
             content_b64,
             account_id: accountId ? Number(accountId) : null,
             password: password || null,
-            remember_password: remember && !!accountId && !!password,
+            remember_password: remember && (cas || !!accountId) && !!password,
+            cas,
           },
         });
         bump();
@@ -90,6 +89,12 @@ function Body() {
       }
     } catch (err) {
       const code = err instanceof ApiError ? err.code : undefined;
+      if (code === 'cas' && err instanceof ApiError && err.detail?.cas_id) {
+        bump();
+        close();
+        router.push(`/investments/cas/${err.detail.cas_id}`);
+        return;
+      }
       if (code === 'password_required' || code === 'wrong_password') {
         setNeedPw(true);
         setTimeout(() => pwRef.current?.focus(), 50);

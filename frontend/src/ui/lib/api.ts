@@ -1,7 +1,7 @@
 'use client';
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string, public code?: string) {
+  constructor(public status: number, message: string, public code?: string, public detail?: Record<string, unknown>) {
     super(message);
   }
 }
@@ -40,7 +40,8 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const d = (body as { detail?: { code?: string } } | null)?.detail;
-    throw new ApiError(res.status, detailMessage(body, res.status), typeof d === 'object' && d ? d.code : undefined);
+    const obj = typeof d === 'object' && d && !Array.isArray(d) ? (d as Record<string, unknown>) : undefined;
+    throw new ApiError(res.status, detailMessage(body, res.status), obj ? (obj.code as string | undefined) : undefined, obj);
   }
   return body as T;
 }

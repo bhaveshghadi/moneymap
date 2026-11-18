@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     lockout_minutes: int = 15
     # Gmail fetches estimated above this size need a confirmation tick.
     gmail_consent_mb: int = 1000
+    # Download mutual fund prices (NAVs) from AMFI once a day. Off in test containers.
+    nav_update: bool = True
 
     @property
     def database_url(self) -> str:

@@ -9,8 +9,8 @@ from ..accounts.models import Account
 from ..auth.security import current_user
 from ..categories.models import Category, Tag
 from .models import Transaction, TransactionType
-from .schemas import TransactionIn, TransactionOut, TransactionPage
-from .service import apply_body, sync_inbox_status, txn_out
+from .schemas import BulkDeleteIn, BulkDeleteOut, TransactionIn, TransactionOut, TransactionPage
+from .service import apply_body, reopen_statements, statements_of, sync_inbox_status, txn_out
 
 router = APIRouter(prefix="/transactions", tags=["transactions"], dependencies=[Depends(current_user)])
 
@@ -150,6 +150,21 @@ def create_transaction(body: TransactionIn, db: Session = Depends(get_db)) -> Tr
     return txn_out(t)
 
 
+@router.post("/delete", response_model=BulkDeleteOut)
+def delete_transactions(body: BulkDeleteIn, db: Session = Depends(get_db)) -> BulkDeleteOut:
+    """Delete several transactions at once (the ones selected in the list). Each goes the same
+    way as a single delete; ids that no longer exist are skipped."""
+    found = list(db.scalars(select(Transaction).where(Transaction.id.in_(set(body.ids)))).unique())
+    mids = [t.gmail_message_id for t in found]
+    imports = statements_of(db, [t.id for t in found])
+    for t in found:
+        db.delete(t)
+    sync_inbox_status(db, *mids)
+    reopen_statements(db, imports)
+    db.commit()
+    return BulkDeleteOut(deleted=len(found))
+
+
 @router.get("/{tid}", response_model=TransactionOut)
 def get_transaction(tid: int, db: Session = Depends(get_db)) -> TransactionOut:
     return txn_out(_get(db, tid))
@@ -170,6 +185,8 @@ def update_transaction(tid: int, body: TransactionIn, db: Session = Depends(get_
 def delete_transaction(tid: int, db: Session = Depends(get_db)) -> None:
     t = _get(db, tid)
     mid = t.gmail_message_id
+    imports = statements_of(db, [t.id])
     db.delete(t)
     sync_inbox_status(db, mid)
+    reopen_statements(db, imports)
     db.commit()

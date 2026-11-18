@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..accounts.models import Account
-from ..statements.models import StatementImport
+from ..statements.models import StatementImport, StatementRow
 from ..transactions.models import Transaction
 from .cycles import Cycle, Rule, build_cycles, due_date, next_statement, rule_at
 from .emi import emi_out, plans_of
@@ -20,14 +20,41 @@ def rules_of(card: CreditCard) -> list[Rule]:
     return [Rule(r.effective_from, r.statement_day, r.due_mode, r.due_value) for r in card.rules]
 
 
-def _moves(db: Session, account_id: int) -> list[tuple[date, int]]:
-    """(date, signed amount) of every transaction on the card: out negative, in positive."""
+def _late_on_statement(db: Session, account_id: int) -> dict[int, date]:
+    """Transactions imported from one of this card's statements, with that statement's first
+    day: a charge dated before it (posted late by the bank) belongs to that statement's cycle."""
     rows = db.execute(
-        select(Transaction.date, Transaction.amount, Transaction.destination_id).where(
+        select(StatementRow.transaction_id, StatementImport.period_start)
+        .join(StatementImport, StatementRow.import_id == StatementImport.id)
+        .where(
+            StatementImport.account_id == account_id,
+            StatementImport.period_start.is_not(None),
+            StatementRow.transaction_id.is_not(None),
+        )
+    ).all()
+    return {tid: start for tid, start in rows}
+
+
+def cycle_dates(db: Session, account_id: int) -> list[tuple[int, date, int]]:
+    """(transaction id, date it counts on, signed amount) of every transaction on the card:
+    out negative, in positive. It counts on its own date, except a charge printed on an
+    imported statement but dated before that statement's period: then on the period's first day."""
+    late = _late_on_statement(db, account_id)
+    rows = db.execute(
+        select(Transaction.id, Transaction.date, Transaction.amount, Transaction.destination_id).where(
             or_(Transaction.source_id == account_id, Transaction.destination_id == account_id)
         )
     ).all()
-    return [(d, amt if dst == account_id else -amt) for d, amt, dst in rows]
+    out = []
+    for tid, d, amt, dst in rows:
+        start = late.get(tid)
+        out.append((tid, max(d, start) if start else d, amt if dst == account_id else -amt))
+    return out
+
+
+def _moves(db: Session, account_id: int) -> list[tuple[date, int]]:
+    """(date it counts on, signed amount) of every transaction on the card."""
+    return [(d, amt) for _, d, amt in cycle_dates(db, account_id)]
 
 
 def _cycle_out(c: Cycle) -> CycleOut:

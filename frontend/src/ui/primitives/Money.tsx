@@ -36,7 +36,7 @@ export function Money({ amount, sign = false, pos = false, className = '', size,
     ? (revealed ? 'Click to hide' : 'Click to reveal')
     : masked
       ? 'Hidden — use the eye toggle in the top bar to reveal'
-      : compact && text !== inr(amount) ? inr(amount) : undefined;
+      : compact && text !== inr(amount) ? inr2(amount) : undefined; // the exact figure, paise included
 
   return (
     <span

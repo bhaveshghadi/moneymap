@@ -26,7 +26,7 @@ const TYPES = [
 export function TransactionsPage() {
   const pathname = usePathname();
   const sp = useSearchParams();
-  const { version } = useShell();
+  const { version, bump } = useShell();
   const { openTxn, newTxn } = useTxn();
 
   // The URL is the filter state, so every view is deep-linkable.
@@ -125,6 +125,52 @@ export function TransactionsPage() {
     }
   };
 
+  // Select mode: tick rows, then delete them together. The selection is cleared
+  // whenever the list changes (filters, a save elsewhere, after deleting).
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [selError, setSelError] = useState<string | null>(null);
+  const [selKey, setSelKey] = useState(key);
+  if (selKey !== key) {
+    setSelKey(key);
+    setSelected(new Set());
+    setConfirmDelete(false);
+  }
+  const toggle = (id: number) => {
+    setConfirmDelete(false);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const loadedIds = (page?.items ?? []).map((t) => t.id);
+  const allSelected = loadedIds.length > 0 && loadedIds.every((id) => selected.has(id));
+  const stopSelecting = () => {
+    setSelecting(false);
+    setSelected(new Set());
+    setConfirmDelete(false);
+    setSelError(null);
+  };
+  const deleteSelected = async () => {
+    if (!confirmDelete) return setConfirmDelete(true);
+    setDeleting(true);
+    setSelError(null);
+    try {
+      await api('/transactions/delete', { method: 'POST', body: { ids: [...selected] } });
+      stopSelecting();
+      bump();
+    } catch (e) {
+      setSelError((e as Error).message);
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const groups = useMemo(() => {
     const out: { date: string; items: Txn[] }[] = [];
     for (const t of page?.items ?? []) {
@@ -161,6 +207,11 @@ export function TransactionsPage() {
           </p>
         </div>
         <div className="actions">
+          {page && page.items.length > 0 && (
+            <Button variant="secondary" icon={selecting ? 'x' : 'list-checks'} onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>
+              {selecting ? 'Done' : 'Select'}
+            </Button>
+          )}
           <Button
             variant="primary"
             icon="plus"
@@ -293,6 +344,42 @@ export function TransactionsPage() {
         )}
       </div>
 
+      {selecting && page && (
+        <div className="card card-pad select-bar" role="region" aria-label="Selected transactions">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={() => {
+                setConfirmDelete(false);
+                setSelected(allSelected ? new Set() : new Set(loadedIds));
+              }}
+            />
+            {allSelected ? 'Unselect all' : `Select all ${loadedIds.length}${page.total > loadedIds.length ? ' shown' : ''}`}
+          </label>
+          <span className="muted" style={{ fontSize: 13.5 }} aria-live="polite">
+            {selected.size} selected
+          </span>
+          <span className="spacer" style={{ flex: 1 }} />
+          {selError && <span className="form-error" role="alert" style={{ margin: 0 }}>{selError}</span>}
+          {selected.size > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => { setSelected(new Set()); setConfirmDelete(false); }}>
+              Clear
+            </Button>
+          )}
+          <Button
+            variant={confirmDelete ? 'primary' : 'secondary'}
+            size="sm"
+            icon="trash-2"
+            onClick={deleteSelected}
+            disabled={selected.size === 0 || deleting}
+            className={confirmDelete ? 'btn-danger' : ''}
+          >
+            {deleting ? 'Deleting…' : confirmDelete ? `Confirm: delete ${selected.size}` : `Delete selected (${selected.size})`}
+          </Button>
+        </div>
+      )}
+
       <div className="card">
         <div className="card-list" style={{ paddingTop: 10 }}>
           {error ? (
@@ -317,9 +404,18 @@ export function TransactionsPage() {
               {groups.map((g) => (
                 <div key={g.date}>
                   <div className="day-head">{fmtDayHead(g.date)}</div>
-                  {g.items.map((t) => (
-                    <TxnRow key={t.id} t={t} onClick={() => openTxn(t)} showDate={false} />
-                  ))}
+                  {g.items.map((t) =>
+                    selecting ? (
+                      <div key={t.id} className={`txn-select ${selected.has(t.id) ? 'on' : ''}`}>
+                        <input type="checkbox" aria-label={`Select ${t.description}`} checked={selected.has(t.id)} onChange={() => toggle(t.id)} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <TxnRow t={t} onClick={() => toggle(t.id)} showDate={false} />
+                        </div>
+                      </div>
+                    ) : (
+                      <TxnRow key={t.id} t={t} onClick={() => openTxn(t)} showDate={false} />
+                    ),
+                  )}
                 </div>
               ))}
               {page.items.length < page.total && (

@@ -75,7 +75,8 @@ function CycleViewer({
   const c: CardCycle = cycles[idx] ?? card.current;
   const billed = c.status !== 'unbilled';
   const newer = idx > 0 ? cycles[idx - 1] : null;
-  const spends = useApi<TxnPage>(`/transactions${qs({ account_id: card.id, date_from: c.start, date_to: c.statement_date, limit: 200 })}`);
+  // the cycle's transactions (a charge posted late is listed with the statement it's printed on)
+  const spends = useApi<{ items: Txn[] }>(`/cards/${card.id}/cycle${qs({ start: c.start, end: c.statement_date })}`);
   // payments towards a billed statement: money into the card after its statement date, until the next statement
   const payWindowEnd = newer ? newer.statement_date : todayIso();
   const after = useApi<TxnPage>(

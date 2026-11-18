@@ -93,3 +93,18 @@ def test_text_search_treats_wildcards_literally(client, bank):
     spend(client, bank, 100, desc="plain")
     assert client.get("/api/transactions", params={"q": "%"}).json()["total"] == 1
     assert client.get("/api/transactions", params={"q": "_"}).json()["total"] == 0
+
+
+def test_delete_selected_transactions(client, bank):
+    a, b, keep = spend(client, bank, 1_000), spend(client, bank, 2_000, tags=["x"]), spend(client, bank, 4_000)
+    r = client.post("/api/transactions/delete", json={"ids": [a["id"], b["id"], 999_999]})
+    assert r.status_code == 200 and r.json() == {"deleted": 2}  # an unknown id is skipped
+    assert client.get(f"/api/transactions/{a['id']}").status_code == 404
+    assert client.get(f"/api/transactions/{b['id']}").status_code == 404
+    assert client.get(f"/api/transactions/{keep['id']}").status_code == 200
+    assert balance(client, bank["id"]) == 10_000_000 - 4_000
+    assert client.post("/api/transactions/delete", json={"ids": []}).status_code == 422
+
+
+def test_delete_selected_needs_login(anon):
+    assert anon.post("/api/transactions/delete", json={"ids": [1]}).status_code == 401

@@ -11,9 +11,21 @@ from ..auth.security import current_user
 from ..categories.models import Category
 from ..statements.review import is_card_payment_text
 from ..transactions.models import Transaction, TransactionType
+from ..transactions.service import txn_out
 from .models import CardCycleRule, CreditCard
-from .schemas import CardDetail, CardDue, CardIn, CardOut, CardPatch, Convertible, ConvertIn, ConvertOut, EmptyCategory
-from .service import add_rule, all_cards, card_dues, card_out
+from .schemas import (
+    CardDetail,
+    CardDue,
+    CardIn,
+    CardOut,
+    CardPatch,
+    Convertible,
+    ConvertIn,
+    ConvertOut,
+    CycleTxns,
+    EmptyCategory,
+)
+from .service import add_rule, all_cards, card_dues, card_out, cycle_dates
 
 router = APIRouter(prefix="/cards", tags=["cards"], dependencies=[Depends(current_user)])
 
@@ -182,6 +194,18 @@ def create_card(body: CardIn, db: Session = Depends(get_db)) -> CardDetail:
 @router.get("/{account_id}", response_model=CardDetail)
 def get_card(account_id: int, db: Session = Depends(get_db)) -> CardDetail:
     return card_out(db, _get(db, account_id), detail=True)  # type: ignore[return-value]
+
+
+@router.get("/{account_id}/cycle", response_model=CycleTxns)
+def cycle_transactions(account_id: int, start: date, end: date, db: Session = Depends(get_db)) -> CycleTxns:
+    """The transactions that count in the cycle start..end, newest first — like a date
+    filter, except a charge posted late is listed with the statement it's printed on."""
+    card = _get(db, account_id)
+    ids = [tid for tid, d, _ in cycle_dates(db, card.account_id) if start <= d <= end]
+    txns = db.scalars(
+        select(Transaction).where(Transaction.id.in_(ids)).order_by(Transaction.date.desc(), Transaction.id.desc())
+    ).unique()
+    return CycleTxns(items=[txn_out(t) for t in txns])
 
 
 @router.patch("/{account_id}", response_model=CardDetail)

@@ -149,3 +149,23 @@ def sync_inbox_status(db: Session, *message_ids: str | None) -> None:
             continue
         linked = db.scalar(select(func.count(Transaction.id)).where(Transaction.gmail_message_id == mid))
         msg.status = "handled" if linked else "new"
+
+
+def statements_of(db: Session, txn_ids: list[int]) -> set[int]:
+    """The statement imports that created these transactions (ask BEFORE deleting them)."""
+    from ..statements.models import StatementRow  # the statements module imports this one
+
+    if not txn_ids:
+        return set()
+    return set(db.scalars(select(StatementRow.import_id).where(StatementRow.transaction_id.in_(txn_ids))))
+
+
+def reopen_statements(db: Session, import_ids: set[int]) -> None:
+    """AFTER deleting transactions: their statements are read again, so those rows can be
+    imported once more (the rows lost their link when the transaction went)."""
+    from ..statements.router import reopen_imports  # the statements module imports this one
+
+    if import_ids:
+        db.flush()
+        db.expire_all()  # the rows' transaction links were cleared by the database
+        reopen_imports(db, import_ids)

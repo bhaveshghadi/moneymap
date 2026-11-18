@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -182,6 +183,33 @@ def _get(db: Session, sid: int) -> StatementImport:
     imp = db.get(StatementImport, sid)
     if imp is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Statement not found")
+    return _revive(db, imp)
+
+
+def _revive(db: Session, imp: StatementImport) -> StatementImport:
+    """Bring an older statement up to date when it's opened again: if its account was deleted,
+    match it to an account by the last 4 digits again; if transactions it imported were deleted
+    since, those rows are read again (today's parser) to be imported once more."""
+    changed = False
+    # a statement imported before always had an account, so none now means it was deleted
+    # (a never-imported draft without one may be your own choice: left alone)
+    if imp.imported_at is not None and imp.account_id is None and imp.account_last4:
+        account = _match_account(db, imp.account_last4, imp.doc_type)
+        if account is not None:
+            imp.account_id = account.id
+            if account.type == AccountType.credit_card:
+                imp.doc_type = "card_statement"
+            changed = True
+    if imp.status == "imported" and any(r.include and not r.transaction_id for r in imp.rows):
+        changed = True  # transactions it imported were deleted (before they reopened it themselves)
+    if changed:
+        _rebuild(db, imp)  # also drops rows an older parser read wrongly
+    elif imp.doc_type == "card_statement" and imp.statement_date is None:
+        _apply_summary(imp)  # read before the summary box was understood
+        changed = imp.statement_date is not None
+    if changed:
+        db.commit()
+        db.refresh(imp)
     return imp
 
 
@@ -226,7 +254,7 @@ def start_import(body: StatementStartIn, db: Session = Depends(get_db)) -> State
         select(StatementImport).where(StatementImport.attachment_id == att.id).order_by(StatementImport.id.desc())
     )
     if existing:
-        return _detail(db, existing)
+        return _detail(db, _revive(db, existing))
     if not (att.mime_type == "application/pdf" or att.filename.lower().endswith(".pdf")):
         raise _bad("Only PDF statements can be imported.", "not_pdf")
 
@@ -277,7 +305,7 @@ def upload_statement(body: StatementUploadIn, db: Session = Depends(get_db)) -> 
         select(StatementImport).where(StatementImport.file_sha256 == sha).order_by(StatementImport.id.desc())
     )
     if existing:
-        return _detail(db, existing).model_copy(update={"opened_existing": True})
+        return _detail(db, _revive(db, existing)).model_copy(update={"opened_existing": True})
     # The same file already fetched from Gmail: use that email's statement, so
     # the email is linked (and marked handled) as usual — no second draft.
     att = db.scalar(select(GmailAttachment).where(GmailAttachment.sha256 == sha).order_by(GmailAttachment.id))
@@ -475,7 +503,15 @@ def _carry_edits(edited: list[StatementRow], rows: list[StatementRow]) -> int:
 def reparse(sid: int, db: Session = Depends(get_db)) -> StatementDetail:
     """Read the saved statement text again (e.g. after a parser fix) — no
     password needed. Rows already imported are kept; the rest are rebuilt."""
-    imp = _get(db, sid)
+    imp = _rebuild(db, _get(db, sid))
+    db.commit()
+    db.refresh(imp)
+    return _detail(db, imp)
+
+
+def _rebuild(db: Session, imp: StatementImport) -> StatementImport:
+    """Parse the saved text again with today's parser: rows that have a transaction stay,
+    the others are rebuilt (your edits carried over); the summary box is read again."""
     current = db.get(Account, imp.account_id) if imp.account_id else None
     on_card = current is not None and current.type == AccountType.credit_card
     parsed = parse_statement(imp.text, "card_statement" if on_card else "bank_statement")
@@ -491,7 +527,18 @@ def reparse(sid: int, db: Session = Depends(get_db)) -> StatementDetail:
         for r in edited
     ]
     imp.rows = [r for r in imp.rows if r.transaction_id]
-    parsed.txns = [t for t in parsed.txns if t.raw not in kept_raw]
+    # a row already imported stays; it's recognised by its text, or by date + amount when an
+    # older parser read its text differently (e.g. with the next section's words stuck on)
+    kept_keys = Counter((r.date.isoformat(), r.amount) for r in imp.rows if r.raw not in {t.raw for t in parsed.txns})
+    fresh = []
+    for t in parsed.txns:
+        if t.raw in kept_raw:
+            continue
+        if kept_keys[(t.date, t.amount)] > 0:
+            kept_keys[(t.date, t.amount)] -= 1
+            continue
+        fresh.append(t)
+    parsed.txns = fresh
     imp.doc_type = "card_statement" if on_card else parsed.doc_type
     imp.account_last4 = parsed.account_last4 or imp.account_last4
     if imp.account_id is None:
@@ -501,14 +548,20 @@ def reparse(sid: int, db: Session = Depends(get_db)) -> StatementDetail:
     _apply_summary(imp)
     carried = _carry_edits(snapshot, imp.rows)
     if carried:
-        log.info("statement %s: kept your edits on %d of %d edited rows", sid, carried, len(snapshot))
+        log.info("statement %s: kept your edits on %d of %d edited rows", imp.id, carried, len(snapshot))
     if parsed.txns or kept_raw:
         imp.status = "imported" if kept_raw and not parsed.txns else "draft"
     db.flush()
     refresh(db, imp)
-    db.commit()
-    db.refresh(imp)
-    return _detail(db, imp)
+    return imp
+
+
+def reopen_imports(db: Session, import_ids: set[int]) -> None:
+    """After transactions were deleted: statements that had imported them are read again,
+    so those rows can be imported once more (as a draft). Called by the transactions module."""
+    for imp in db.scalars(select(StatementImport).where(StatementImport.id.in_(import_ids))):
+        if any(not r.transaction_id for r in imp.rows if r.include):
+            _rebuild(db, imp)
 
 
 @router.get("/{sid}", response_model=StatementDetail)

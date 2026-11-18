@@ -70,3 +70,11 @@ class TransactionPage(BaseModel):
     total: int
     sum_in: int  # income in the filtered set
     sum_out: int  # expenses in the filtered set
+
+
+class BulkDeleteIn(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=1000)
+
+
+class BulkDeleteOut(BaseModel):
+    deleted: int

@@ -115,7 +115,7 @@ export function OverviewPage() {
         <StatCard
           lbl="Net worth"
           icon="scale"
-          val={<Money amount={rs(data.net_worth)} compact pos={data.net_worth >= 0} sign={data.net_worth < 0} />}
+          val={<Money amount={rs(data.net_worth)} precise pos={data.net_worth >= 0} sign={data.net_worth < 0} />}
           sub={
             data.cards_owed + data.loans_owed > 0 ? (
               <>
@@ -198,7 +198,7 @@ export function OverviewPage() {
                   glyph={<CategoryGlyph icon={g.icon} color={g.color} size={34} />}
                   title={a.name}
                   sub={ACCOUNT_TYPE_LABEL[a.type]}
-                  right={<Money amount={rs(a.balance)} interactive={false} sign={a.balance < 0} />}
+                  right={<Money amount={rs(a.balance)} precise interactive={false} sign={a.balance < 0} />}
                 />
               );
             })

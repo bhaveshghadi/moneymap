@@ -2,7 +2,7 @@
 fees / refunds / EMI rows, the statement's own figures, and converting old
 card-bill expenses into transfers."""
 
-from datetime import date
+from datetime import date, datetime
 
 from app.modules.statements.card_summary import parse_card_summary
 
@@ -251,3 +251,121 @@ def test_choosing_a_card_rereads_a_draft_the_card_way(client):
 def test_month_first_dates():
     s = parse_card_summary("Credit Card Statement\nStatement period : September 19, 2026 to October 18, 2026")
     assert (s.period_start, s.statement_date) == (date(2026, 9, 19), date(2026, 10, 18))
+
+
+def test_card_deleted_and_added_again_can_import_its_statement_again(client):
+    """Import a card statement, delete its transactions and the card, add the card back:
+    fetching the same statement again opens it as a draft on the new card, ready to import."""
+    lines = [*CARD_LINES[:7], "15/10/2026 AMAZON PAY INDIA 3,200.00", "20/10/2026 SWIGGY BANGALORE 450.00"]
+    card = _card(client)
+    att = add_email(lines, mid="card-again", sender="HDFC Bank <alerts@hdfcbank.net>")
+    d = client.post("/api/statements", json={"attachment_id": att, "password": "test-pdf-pass"}).json()
+    for r in d["rows"]:
+        client.patch(f"/api/statements/{d['id']}/rows/{r['id']}", json={"leave_uncategorised": True})
+    assert client.post(f"/api/statements/{d['id']}/import").json()["imported"] == 2
+
+    ids = [t["id"] for t in client.get("/api/transactions", params={"account_id": card["id"]}).json()["items"]]
+    assert client.post("/api/transactions/delete", json={"ids": ids}).json() == {"deleted": 2}
+    assert client.get(f"/api/statements/{d['id']}").json()["status"] == "draft"  # its rows can go in again
+    assert client.delete(f"/api/cards/{card['id']}").status_code == 204
+
+    again = _card(client, name="HDFC Millennia")
+    d2 = client.post("/api/statements", json={"attachment_id": att}).json()
+    assert d2["id"] == d["id"] and d2["status"] == "draft" and d2["account_id"] == again["id"]
+    assert client.post(f"/api/statements/{d['id']}/import").json()["imported"] == 2
+    assert client.get(f"/api/cards/{again['id']}").json()["owed"] > 0
+
+
+def test_imported_statement_whose_card_was_deleted_finds_the_new_card(client):
+    """Even when the transactions were deleted before this fix (the statement still says
+    imported), opening it again brings it back as a draft on the card with those last digits."""
+    from app.db import SessionLocal
+    from app.modules.statements.models import StatementImport
+
+    lines = [*CARD_LINES[:7], "15/10/2026 AMAZON PAY INDIA 3,200.00"]
+    att = add_email(lines, mid="card-old", sender="HDFC Bank <alerts@hdfcbank.net>")
+    d = client.post("/api/statements", json={"attachment_id": att, "password": "test-pdf-pass"}).json()
+    with SessionLocal() as db:  # what an old install looks like: imported, no account, no transactions
+        imp = db.get(StatementImport, d["id"])
+        imp.status, imp.account_id, imp.imported_at = "imported", None, datetime(2026, 11, 14)
+        db.commit()
+    card = _card(client)
+    d2 = client.get(f"/api/statements/{d['id']}").json()
+    assert (d2["status"], d2["account_id"], d2["doc_type"]) == ("draft", card["id"], "card_statement")
+
+
+def test_summary_labels_and_values_in_separate_blocks():
+    # ICICI: the labels come first, the values later and out of order; dates on lines of their own
+    text = "\n".join([
+        "PAYMENT DUE DATE", "STATEMENT DATE", "STATEMENT SUMMARY", "Total Amount due", "Minimum Amount due",
+        "Interest will be charged if your", "Á12,880.00", "Á46,532.17", "SPENDS OVERVIEW",
+        "October 18, 2026", "November 5, 2026", "Previous Balance", "23,073.43",
+        "Statement period : September 19, 2026 to October 18, 2026",
+    ])
+    s = parse_card_summary(text)
+    assert (s.statement_date, s.period_start, s.due_date) == (date(2026, 10, 18), date(2026, 9, 19), date(2026, 11, 5))
+    assert (s.total_due, s.min_due) == (4_653_217, 1_288_000)
+
+
+def test_emi_table_rows_are_not_transactions():
+    from app.modules.statements.parser import parse_statement
+
+    text = "\n".join([
+        *CARD_LINES[:8], "15/10/2026 AMAZON PAY INDIA 3,200.00", "# International Spends",
+        "EMI / PERSONAL LOAN ON CREDIT CARDS", "Creation Date Finish Date No. of Installments EMI/Loan Amount",
+        "Merchant EMI", "conversions", "20/07/2026 20/12/2026 6 34,934.00 3 18,290.59 6,096.87",
+        "MOST IMPORTANT TERMS AND CONDITIONS (MITC)",
+    ])
+    p = parse_statement(text, "card_statement")
+    assert [(t.date, t.amount) for t in p.txns] == [("2026-10-15", -320_000)]
+
+
+def test_charge_posted_late_counts_in_its_statements_cycle(client):
+    """A charge dated the day before the statement period, printed on that statement, is
+    billed with it — not shown as an older statement of its own."""
+    lines = [
+        "HDFC Bank Credit Card Statement", "Card No: XXXX XXXX XXXX 1111",
+        "Statement period : October 13, 2026 to November 12, 2026",
+        "Date Transaction Details Amount",
+        "12/10/2026 AMAZON PAY UTILITY 6,990.00",
+        "20/10/2026 SWIGGY BANGALORE 450.00",
+    ]
+    card = _card(client, opening_owed=0, opening_date="2026-09-01")
+    att = add_email(lines, mid="card-late", sender="HDFC Bank <alerts@hdfcbank.net>")
+    d = client.post("/api/statements", json={"attachment_id": att, "password": "test-pdf-pass"}).json()
+    for r in d["rows"]:
+        client.patch(f"/api/statements/{d['id']}/rows/{r['id']}", json={"leave_uncategorised": True})
+    assert client.post(f"/api/statements/{d['id']}/import").json()["imported"] == 2
+
+    c = client.get(f"/api/cards/{card['id']}").json()
+    by_sd = {x["statement_date"]: x for x in c["cycles"]}
+    assert by_sd["2026-11-12"]["spent"] == 744_000  # 6,990 + 450, both on this statement
+    assert by_sd.get("2026-10-12", {"spent": 0})["spent"] == 0  # no older "statement" for the late charge
+    items = client.get(f"/api/cards/{card['id']}/cycle", params={"start": "2026-10-13", "end": "2026-11-12"}).json()
+    assert sorted(t["amount"] for t in items["items"]) == [45_000, 699_000]
+
+
+def test_reading_again_keeps_rows_an_older_parser_read_differently(client):
+    """Rows imported with text an older parser read differently (extra words stuck on) are
+    still recognised when the statement is read again — no second copy to import."""
+    from app.db import SessionLocal
+    from app.modules.statements.models import StatementRow
+
+    lines = [*CARD_LINES[:8], "15/10/2026 AMAZON PAY INDIA 3,200.00", "20/10/2026 SWIGGY BANGALORE 450.00"]
+    card = _card(client)
+    att = add_email(lines, mid="card-oldraw", sender="HDFC Bank <alerts@hdfcbank.net>")
+    d = client.post("/api/statements", json={"attachment_id": att, "password": "test-pdf-pass"}).json()
+    for r in d["rows"]:
+        client.patch(f"/api/statements/{d['id']}/rows/{r['id']}", json={"leave_uncategorised": True})
+    client.post(f"/api/statements/{d['id']}/import")
+    with SessionLocal() as db:  # what an older parser left behind
+        row = db.query(StatementRow).filter(StatementRow.import_id == d["id"], StatementRow.amount == -320_000).one()
+        row.raw += " International Spends"
+        db.commit()
+    swiggy = next(t for t in client.get("/api/transactions", params={"account_id": card["id"]}).json()["items"]
+                  if t["amount"] == 45_000)
+    client.delete(f"/api/transactions/{swiggy['id']}")
+    d2 = client.get(f"/api/statements/{d['id']}").json()
+    assert d2["status"] == "draft"
+    assert sorted(r["amount"] for r in d2["rows"]) == [-320_000, -45_000]  # Amazon kept once, Swiggy back
+    assert [r["status"] for r in d2["rows"] if r["amount"] == -320_000] == ["imported"]

@@ -11,7 +11,7 @@ Layouts seen in Indian card statements:
 
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 MONTHS = {
     m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)
@@ -146,4 +146,33 @@ def parse_card_summary(text: str) -> CardSummary:
         end = parse_date(m.group(2))
         if s.statement_date is None:
             s.statement_date = end
+    _separate_blocks(s, head)
     return s
+
+
+ALONE_AMOUNT_RE = re.compile(r"(?:rs\.?|inr|₹|Á)?\s*(\d{1,3}(?:,\d{2,3})+\.\d{2}|\d+\.\d{2})", re.I)
+
+
+def _separate_blocks(s: CardSummary, head: list[str]) -> None:
+    """Layouts that print the labels in one block and the values in another, out of order
+    (e.g. ICICI: "Total Amount due" / "Minimum Amount due" ... then "₹12,880.00" / "₹46,532.17",
+    and the dates as "October 18, 2026" / "November 5, 2026" on lines of their own)."""
+    seen = {f for line in head for f, rx in LABELS.items() if rx.search(line)}
+    if s.total_due is None and s.min_due is None and {"total_due", "min_due"} <= seen:
+        alone = [_money_alone(m.group(1)) for line in head if (m := ALONE_AMOUNT_RE.fullmatch(line))]
+        alone = [v for v in alone if v != s.previous_balance]  # already read with its own label
+        if len(alone) == 2:  # the total is never below the minimum
+            s.total_due, s.min_due = max(alone), min(alone)
+    if s.due_date is None and "due_date" in seen and s.statement_date is not None:
+        later = [
+            d
+            for line in head
+            if (m := DATE_TOKEN.fullmatch(line)) and (d := parse_date(m.group(1)))
+            and s.statement_date < d <= s.statement_date + timedelta(days=60)
+        ]
+        if later:
+            s.due_date = later[0]
+
+
+def _money_alone(v: str) -> int:
+    return round(float(v.replace(",", "")) * 100)

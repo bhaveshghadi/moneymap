@@ -189,3 +189,9 @@ select.inp { appearance: auto; }
 @media (max-width: 640px) {
   .topbar .kbd-btn { display: none; }
 }
+
+/* Transactions: select mode */
+.select-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 14px; position: sticky; top: 8px; z-index: 5; }
+.txn-select { display: flex; align-items: center; gap: 10px; border-radius: 10px; padding-left: 6px; }
+.txn-select > input[type='checkbox'] { width: 17px; height: 17px; flex-shrink: 0; cursor: pointer; accent-color: var(--brand); }
+.txn-select.on { background: var(--bg-subtle); }

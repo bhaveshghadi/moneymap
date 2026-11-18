@@ -79,9 +79,9 @@ export function AccountsPage() {
 
       {data && (
         <div className="grid-3 stat-grid">
-          <StatCard lbl="Net worth" icon="scale" val={<Money amount={rs(assetsTotal)} compact pos={assetsTotal >= 0} sign={assetsTotal < 0} />} sub="Bank and cash today" />
-          <StatCard lbl="Bank accounts" icon="landmark" val={<Money amount={rs(banks.reduce((s, a) => s + a.balance, 0))} compact pos />} sub={`${banks.length} active account${banks.length === 1 ? '' : 's'}`} />
-          <StatCard lbl="Cash" icon="banknote" val={<Money amount={rs(cash.reduce((s, a) => s + a.balance, 0))} compact pos />} sub={`${cash.length} active wallet${cash.length === 1 ? '' : 's'}`} />
+          <StatCard lbl="Net worth" icon="scale" val={<Money amount={rs(assetsTotal)} precise pos={assetsTotal >= 0} sign={assetsTotal < 0} />} sub="Bank and cash today" />
+          <StatCard lbl="Bank accounts" icon="landmark" val={<Money amount={rs(banks.reduce((s, a) => s + a.balance, 0))} precise pos />} sub={`${banks.length} active account${banks.length === 1 ? '' : 's'}`} />
+          <StatCard lbl="Cash" icon="banknote" val={<Money amount={rs(cash.reduce((s, a) => s + a.balance, 0))} precise pos />} sub={`${cash.length} active wallet${cash.length === 1 ? '' : 's'}`} />
         </div>
       )}
 
@@ -131,7 +131,7 @@ export function AccountsPage() {
                         </div>
                       </td>
                       <td className="r figure">
-                        <Money amount={rs(value)} interactive={false} sign={isBalance && value < 0} pos={tab === 'own' && value > 0} />
+                        <Money amount={rs(value)} precise interactive={false} sign={isBalance && value < 0} pos={tab === 'own' && value > 0} />
                       </td>
                       <td className="r t-mono hide-sm">{a.transaction_count}</td>
                       <td className="r muted hide-sm">{a.last_activity ? fmtDate(a.last_activity) : '—'}</td>

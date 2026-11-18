@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from ..transactions.schemas import TransactionOut
 from .emi import EmiOut
 
 DueMode = Literal["days_after", "fixed_day"]
@@ -159,3 +160,10 @@ class CardDue(BaseModel):
     amount: int  # still to pay
     min_due: int
     status: CycleStatus
+
+
+class CycleTxns(BaseModel):
+    """The transactions that count in one billing cycle (a charge posted late counts in the
+    cycle of the statement it's printed on)."""
+
+    items: list[TransactionOut]

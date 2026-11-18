@@ -16,6 +16,9 @@ from .modules.emergency.router import router as emergency_router
 from .modules.gmail.fetch import recover_stuck_runs
 from .modules.gmail.inbox_router import router as inbox_router
 from .modules.gmail.router import router as gmail_router
+from .modules.investments.fund_router import router as funds_router
+from .modules.investments.nav import start_daily_updates
+from .modules.investments.router import router as investments_router
 from .modules.loans.router import router as loans_router
 from .modules.overview.router import router as overview_router
 from .modules.piggybanks.router import router as piggybanks_router
@@ -29,7 +32,10 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  [%(name)s] %(mess
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     recover_stuck_runs()  # a restart kills Gmail fetch threads; don't leave them "running"
+    stop = start_daily_updates()  # mutual fund prices from AMFI, once a day after 9 pm
     yield
+    if stop is not None:
+        stop.set()
 
 
 app = FastAPI(
@@ -55,6 +61,8 @@ for r in (
     cards_router,
     emi_router,
     loans_router,
+    funds_router,  # before investments_router: /investments/cas isn't an account id
+    investments_router,
     gmail_router,
     inbox_router,
     statements_router,

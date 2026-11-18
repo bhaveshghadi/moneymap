@@ -43,7 +43,7 @@ export function StatementReviewPage({ id }: { id: number }) {
   const existing = useSearchParams().get('existing');
   const { bump } = useShell();
   const { data, error, reload } = useApi<StatementDetail>(`/statements/${id}`);
-  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card&type=emi_plan&include_inactive=false');
+  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card&type=emi_plan&type=investment&include_inactive=false');
   const categories = useApi<Category[]>('/categories');
   const budgets = useApi<BudgetMonth>('/budgets');
   const [st, setSt] = useState<StatementDetail | null>(null);
@@ -91,7 +91,7 @@ export function StatementReviewPage({ id }: { id: number }) {
   const toImport = counts.ready + counts.link;
   const rows = (st?.rows ?? []).filter((r) => FILTERS.find((f) => f.id === filter)!.match(r.status));
   const all = accounts.data ?? [];
-  const own = all.filter((a) => a.type !== 'emi_plan'); // a statement belongs to a bank, cash or card account
+  const own = all.filter((a) => a.type !== 'emi_plan' && a.type !== 'investment'); // a statement belongs to a bank, cash or card account
   const otherAccounts = all.filter((a) => a.id !== st?.account_id && (a.type !== 'emi_plan' || own.find((o) => o.id === st?.account_id)?.type === 'credit_card'));
   const draft = st?.status === 'draft' || (st && toImport > 0);
 
@@ -604,7 +604,7 @@ function Row({
             onChange={(e) => onPatch({ transfer_account_id: e.target.value ? Number(e.target.value) : null })}
           >
             <option value="">{r.amount < 0 ? 'To which account?' : 'From which account?'}</option>
-            {otherAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.type === 'credit_card' ? ' (card)' : ''}</option>)}
+            {otherAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.type === 'credit_card' ? ' (card)' : a.type === 'investment' ? ' (investment)' : ''}</option>)}
           </select>
         ) : (
           <select

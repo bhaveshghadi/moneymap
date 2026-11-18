@@ -17,6 +17,10 @@ const FOCUSABLE_SELECTOR =
 // a Cancel button — without widening `children` into a render-prop.
 const DialogCloseCtx = createContext<() => void>(() => {});
 
+// How many dialogs are open (they can overlap for a moment) and the scroller's overflow before the first.
+let scrollLocks = 0;
+let unlockedOverflow = '';
+
 /** Read the animated close handler from inside a Dialog's children (e.g. a
  * drawer-x or Cancel button). No-op outside a Dialog. */
 export function useDialogClose(): () => void {
@@ -102,13 +106,23 @@ export function Dialog({ open = true, onClose, label, children, width }: DialogP
   // Content scroll lock. `.app` is already `overflow: hidden` (see
   // workbench.css), so the page itself never scrolls — `.content` is the
   // real scroller; fall back to <body> if it isn't found.
+  // Counted, so a drawer opened while another is still closing (e.g. Add investment →
+  // Import CAS) doesn't remember "hidden" and leave the page unscrollable.
   useEffect(() => {
     if (!open) return;
     const scroller = document.querySelector<HTMLElement>('.content') ?? document.body;
-    const prevOverflow = scroller.style.overflow;
-    scroller.style.overflow = 'hidden';
+    if (scrollLocks++ === 0) {
+      unlockedOverflow = scroller.style.overflow === 'hidden' ? '' : scroller.style.overflow;
+      scroller.style.overflow = 'hidden';
+    }
     return () => {
-      scroller.style.overflow = prevOverflow;
+      scrollLocks = Math.max(0, scrollLocks - 1);
+      if (scrollLocks === 0) {
+        // the scroller may have been replaced by a page change: unlock whichever is there now
+        const now = document.querySelector<HTMLElement>('.content') ?? document.body;
+        scroller.style.overflow = unlockedOverflow;
+        now.style.overflow = unlockedOverflow;
+      }
     };
   }, [open]);
 

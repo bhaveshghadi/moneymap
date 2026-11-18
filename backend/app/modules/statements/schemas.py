@@ -19,6 +19,7 @@ class StatementUploadIn(BaseModel):
     account_id: int | None = None  # empty = pick it from the account number on the statement
     password: str | None = Field(default=None, max_length=200)
     remember_password: bool = False  # remembered for the chosen account
+    cas: bool = False  # uploaded from Investments -> Import CAS (the password is remembered for CAS PDFs)
 
 
 class StatementRereadIn(BaseModel):

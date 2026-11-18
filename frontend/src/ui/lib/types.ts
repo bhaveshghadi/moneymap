@@ -7,7 +7,7 @@ export interface AuthStatus {
 }
 
 // Credit cards and loans come later as their own features.
-export type AccountType = 'asset' | 'cash' | 'credit_card' | 'emi_plan' | 'loan' | 'expense' | 'revenue';
+export type AccountType = 'asset' | 'cash' | 'credit_card' | 'emi_plan' | 'loan' | 'investment' | 'expense' | 'revenue';
 export type TxnType = 'withdrawal' | 'deposit' | 'transfer';
 
 export interface AccountRef {
@@ -124,6 +124,10 @@ export interface Overview {
   cards_owed: number; // outstanding on active credit cards (already taken off net_worth)
   loans_owed: number; // what's left on active loans (already taken off net_worth)
   loan_dues: LoanDue[]; // next loan EMIs, overdue or in the next 30 days
+  investments_value: number; // active investments, value today (already added to net_worth)
+  investments_invested: number;
+  investments_count: number;
+  investment_dues: InvestmentDue[]; // maturities, premiums, money due back, chit instalments (current month)
   card_dues: CardDue[]; // card statements overdue or due in the next 30 days (current month only)
   emergency: EmergencySummary | null; // once the emergency fund is set up
 }
@@ -549,7 +553,7 @@ export interface StatementRow {
   leave_uncategorised: boolean;
   user_set: boolean;
   suggestion: string | null;
-  suggestion_kind: 'history' | 'card' | 'link' | 'emi' | 'loan' | null;
+  suggestion_kind: 'history' | 'card' | 'link' | 'emi' | 'loan' | 'investment' | null;
   duplicate_of: number | null;
   duplicate: Txn | null;
   link_txn_id: number | null; // card payment: this bank-side expense becomes the transfer on import
@@ -614,4 +618,215 @@ export interface StatementOverlap {
   source: 'email' | 'upload';
   status: 'draft' | 'imported';
   shared_rows: number;
+}
+
+// ---------- investments (F15)
+
+export type InvestmentKind =
+  | 'mf' | 'fd' | 'rd' | 'post_office' | 'retirement' | 'insurance' | 'lent'
+  | 'chit' | 'gold' | 'stocks' | 'crypto' | 'property' | 'other';
+export type Compounding = 'monthly' | 'quarterly' | 'half_yearly' | 'yearly' | 'payout' | 'simple';
+export type PremiumFrequency = 'monthly' | 'quarterly' | 'half_yearly' | 'yearly' | 'single';
+
+export interface InvestmentDue {
+  account_id: number;
+  name: string;
+  kind: InvestmentKind;
+  date: string;
+  what: 'matures' | 'premium' | 'due_back' | 'instalment';
+  amount: number;
+  overdue: boolean;
+}
+
+export interface Investment {
+  id: number; // account id
+  name: string;
+  kind: InvestmentKind;
+  subtype: string | null;
+  institution: string | null;
+  number: string | null;
+  person: string | null;
+  rate: number | null;
+  compounding: Compounding | null;
+  start_date: string | null;
+  maturity_date: string | null;
+  months: number | null;
+  instalment: number | null;
+  frequency: PremiumFrequency | null;
+  sum_assured: number | null;
+  maturity_amount: number | null;
+  quantity: number | null;
+  purity: string | null;
+  unit_price: number | null;
+  current_value: number | null;
+  payout_on: string | null;
+  payout_amount: number | null;
+  pay_from_id: number | null;
+  opening: number; // amount already invested before tracking
+  closed_on: string | null;
+  notes: string | null;
+  status: 'active' | 'closed';
+  money_in: number;
+  money_out: number;
+  invested: number;
+  value: number;
+  gain: number;
+  gain_pct: number | null;
+  value_date: string | null;
+  maturity_value: number | null;
+  paid_count: number | null;
+  total_count: number | null;
+  owed: number;
+  stale: boolean;
+  no_price: boolean;
+  next_due: InvestmentDue | null;
+  fund: FundInfo | null; // mutual funds
+}
+
+export interface FundInfo {
+  scheme: string;
+  amc: string | null;
+  isin: string | null;
+  folio: string | null;
+  units: number;
+  units_as_of: string | null;
+  nav: number | null; // rupees
+  nav_date: string | null;
+  nav_source: 'cas' | 'amfi' | 'hand' | null;
+  cost: number | null;
+}
+
+export interface FundTxn {
+  id: number;
+  date: string;
+  kind: string;
+  kind_label: string;
+  description: string;
+  amount: number;
+  units: number;
+  nav: number;
+  stamp_duty: number;
+  transaction_id: number | null;
+}
+
+export interface Scheme {
+  code: string;
+  isin: string | null;
+  name: string;
+  amc: string | null;
+  nav: number | null; // 1/10000 rupee
+  nav_date: string | null;
+}
+
+export interface NavStatus {
+  last_run: string | null;
+  updated: number;
+  funds: number;
+  error: string | null;
+  not_found: string[];
+}
+
+export type CasAction = 'link' | 'convert' | 'transfer' | 'switch' | 'before' | 'units' | 'skip';
+
+export interface CasFund {
+  id: number;
+  amc: string | null;
+  folio: string | null;
+  scheme: string;
+  isin: string | null;
+  opening_units: number; // milli-units
+  closing_units: number | null;
+  nav: number | null; // 1/10000 rupee
+  nav_date: string | null;
+  cost: number | null;
+  market_value: number | null;
+  account_id: number | null;
+  account_name: string | null;
+  skip: boolean;
+  rows: number;
+  already_imported: number; // rows imported from an earlier CAS (skipped)
+  replaces_opening: number | null; // joins a fund added by hand: its "already invested", replaced on import
+  units_now: number | null; // the fund it joins: units recorded now
+}
+
+export interface CasRow {
+  id: number;
+  fund_id: number;
+  date: string;
+  description: string;
+  kind: string;
+  kind_label: string;
+  amount: number;
+  units: number;
+  nav: number;
+  balance: number;
+  stamp_duty: number;
+  action: CasAction;
+  match: Txn | null;
+  bank_account_id: number | null;
+  pair_row_id: number | null;
+  existing: boolean;
+  user_set: boolean;
+  transaction_id: number | null;
+}
+
+export interface CasDetail {
+  id: number;
+  filename: string;
+  period_from: string | null;
+  period_to: string | null;
+  status: 'draft' | 'imported';
+  created_at: string;
+  imported_at: string | null;
+  gmail_message_id: string | null;
+  funds: CasFund[];
+  rows: CasRow[];
+  unparsed: string[];
+  counts: Record<string, number>;
+}
+
+export interface CasSummary {
+  id: number;
+  filename: string;
+  period_from: string | null;
+  period_to: string | null;
+  status: 'draft' | 'imported';
+  created_at: string;
+  funds: number;
+  rows: number;
+}
+
+export interface InvestmentDetail extends Investment {
+  moves: Txn[];
+  fund_txns: FundTxn[];
+}
+
+export interface MetalRates {
+  gold_24k: number | null; // paise per gram
+  silver: number | null;
+  date: string | null;
+}
+
+export interface InvestmentSummary {
+  invested: number;
+  value: number;
+  gain: number;
+  owed: number;
+  count: number;
+  by_kind: { kind: InvestmentKind; count: number; invested: number; value: number }[];
+  dues: InvestmentDue[];
+  rates: MetalRates;
+}
+
+export interface InvestmentLinkable {
+  transaction_id: number;
+  date: string;
+  amount: number;
+  direction: 'in' | 'out'; // in = from your bank into the investment
+  description: string;
+  account: string;
+  counterparty: string;
+  category: string | null;
+  suggested: boolean;
+  why: string | null;
 }

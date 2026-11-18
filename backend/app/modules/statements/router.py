@@ -50,13 +50,15 @@ from .schemas import (
 log = logging.getLogger("moneymap.statements")
 router = APIRouter(prefix="/statements", tags=["statement import"], dependencies=[Depends(current_user)])
 
-BALANCE_TYPES = tuple(str(t) for t in OWN_TYPES)  # bank, cash and credit cards (loans come later)
+# bank, cash and credit cards (not investments)
+BALANCE_TYPES = tuple(str(t) for t in OWN_TYPES if t != AccountType.investment)
 ROUNDING = 100  # paise: a statement "adds up" within ₹1
+CAS_PASSWORD_KEY = "pdf_password:cas"  # a CAS uploaded from Investments
 CAS_RE = re.compile(r"consolidated\s+account\s+statement", re.I)
 
 
 def is_cas(text: str) -> bool:
-    """A mutual fund Consolidated Account Statement (handled by investments later)."""
+    """A mutual fund Consolidated Account Statement (imported in Investments)."""
     return bool(CAS_RE.search(text[:3000])) and bool(re.search(r"folio", text, re.I))
 
 
@@ -324,7 +326,13 @@ def upload_statement(body: StatementUploadIn, db: Session = Depends(get_db)) -> 
     path.write_bytes(data)
     try:
         text, parsed = _read_pdf_file(
-            db, path, name, _account_key(body.account_id), body.password, body.remember_password
+            db,
+            path,
+            name,
+            _account_key(body.account_id) or (CAS_PASSWORD_KEY if body.cas else None),
+            body.password,
+            body.remember_password,
+            {"file_sha256": sha},
         )
     except HTTPException:
         path.unlink(missing_ok=True)  # nothing kept until it opens
@@ -358,7 +366,25 @@ def upload_statement(body: StatementUploadIn, db: Session = Depends(get_db)) -> 
 
 def _read_pdf(db: Session, att: GmailAttachment, password: str | None, remember: bool):
     return _read_pdf_file(
-        db, (attachments_dir() / att.path).resolve(), att.filename, _sender_key(att), password, remember
+        db,
+        (attachments_dir() / att.path).resolve(),
+        att.filename,
+        _sender_key(att),
+        password,
+        remember,
+        {"attachment_id": att.id, "file_sha256": att.sha256},
+    )
+
+
+def _cas_found(cas_id: int) -> HTTPException:
+    """A mutual fund CAS: the page opens its review in Investments instead."""
+    return HTTPException(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        {
+            "code": "cas",
+            "message": "This is a mutual fund statement (CAS) — opening it in Investments.",
+            "cas_id": cas_id,
+        },
     )
 
 
@@ -376,9 +402,23 @@ def _account_key(account_id: int | None) -> str | None:
     return f"pdf_password:account:{account_id}" if account_id else None
 
 
-def _read_pdf_file(db: Session, path: Path, filename: str, key: str | None, password: str | None, remember: bool):
+def _read_pdf_file(
+    db: Session,
+    path: Path,
+    filename: str,
+    key: str | None,
+    password: str | None,
+    remember: bool,
+    source: dict | None = None,
+):
     """Unlock + extract the PDF several ways and keep the extraction that parses
-    best (most running balances that add up, then most rows)."""
+    best (most running balances that add up, then most rows). A mutual fund CAS
+    becomes a CAS draft in Investments (`source`: attachment_id / file_sha256)."""
+    from ..investments.models import CasImport  # investments imports the transactions module, not this one
+
+    sha = (source or {}).get("file_sha256")
+    if sha and (cas_id := db.scalar(select(CasImport.id).where(CasImport.file_sha256 == sha))):
+        raise _cas_found(cas_id)  # opened before: no password needed again
     saved = db.get(Setting, key) if key else None
     remembered = None
     if saved:
@@ -401,9 +441,11 @@ def _read_pdf_file(db: Session, path: Path, filename: str, key: str | None, pass
         row.value = encrypt(json.dumps({"password": password}))
         db.merge(row)
     if any(is_cas(text) for _, text in candidates):
-        raise _bad(
-            "This is a mutual fund statement (CAS). Importing those comes with the Investments feature.", "is_cas"
-        )
+        from ..investments.cas_service import open_draft
+
+        cas = open_draft(db, candidates, filename, **(source or {}))
+        db.commit()
+        raise _cas_found(cas.id)
     best = None
     for method, text in candidates:
         parsed = parse_statement(text, "bank_statement")
@@ -619,7 +661,7 @@ def edit_row(sid: int, rid: int, body: StatementRowPatch, db: Session = Depends(
         raise _bad("Budget not found")
     if data.get("transfer_account_id") is not None:
         a = db.get(Account, data["transfer_account_id"])
-        if a is None or a.type not in BALANCE_TYPES or a.id == imp.account_id:
+        if a is None or a.type not in {str(t) for t in OWN_TYPES} or a.id == imp.account_id:
             raise _bad("Choose another of your own accounts for the transfer.")
     amount = data.get("amount", row.amount)
     kind = data.get("kind", row.kind)

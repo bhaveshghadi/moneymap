@@ -253,6 +253,11 @@ function EmailBody({ id }: { id: string }) {
       router.push(`/statements/${st.id}`);
     } catch (e) {
       const code = e instanceof ApiError ? e.code : undefined;
+      if (code === 'cas' && e instanceof ApiError && e.detail?.cas_id) {
+        close(); // a mutual fund statement: its review is in Investments
+        router.push(`/investments/cas/${e.detail.cas_id}`);
+        return;
+      }
       if (code === 'password_required' || code === 'wrong_password') {
         setNeedPassword(true);
         if (code === 'wrong_password' || password) setImportError((e as Error).message);

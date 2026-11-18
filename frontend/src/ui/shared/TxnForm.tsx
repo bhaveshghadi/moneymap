@@ -91,7 +91,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card&include_inactive=false');
+  const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card&type=investment&include_inactive=false');
   const counterparties = useApi<Account[]>('/accounts?type=expense&type=revenue');
   const categories = useApi<Category[]>('/categories');
   const selectedCat = (categories.data ?? []).find((c) => String(c.id) === f.categoryId);
@@ -102,7 +102,7 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
   // Inactive accounts are hidden, except the one this transaction already uses.
   const own = accounts.data ?? [];
-  const keepOwn = txn ? [txn.source, txn.destination].filter((a) => ['asset', 'cash', 'credit_card', 'emi_plan', 'loan'].includes(a.type) && !own.some((o) => o.id === a.id)) : [];
+  const keepOwn = txn ? [txn.source, txn.destination].filter((a) => ['asset', 'cash', 'credit_card', 'emi_plan', 'loan', 'investment'].includes(a.type) && !own.some((o) => o.id === a.id)) : [];
   const ownOptions = [...own, ...keepOwn];
   const expenseNames = (counterparties.data ?? []).filter((a) => a.type === 'expense').map((a) => a.name);
   const revenueNames = (counterparties.data ?? []).filter((a) => a.type === 'revenue').map((a) => a.name);
@@ -162,12 +162,13 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
     }
   };
 
-  const ownSelect = (value: string, onChange: (v: string) => void, label: string, id: string) => (
+  // Investments only take transfers (money in from a bank, money back out to it).
+  const ownSelect = (value: string, onChange: (v: string) => void, label: string, id: string, transfer = false) => (
     <div className="field">
       <label htmlFor={id}>{label}</label>
       <select id={id} className="inp" value={value} onChange={(e) => onChange(e.target.value)} required>
         <option value="">Choose an account…</option>
-        {ownOptions.filter((a) => a.type !== 'credit_card').map((a) => (
+        {ownOptions.filter((a) => a.type !== 'credit_card' && a.type !== 'investment').map((a) => (
           <option key={a.id} value={a.id}>
             {a.name}
           </option>
@@ -177,6 +178,15 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
             {ownOptions.filter((a) => a.type === 'credit_card').map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}{'account_number' in a && a.account_number ? ` ··${a.account_number}` : ''}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {transfer && ownOptions.some((a) => a.type === 'investment') && (
+          <optgroup label="Investments">
+            {ownOptions.filter((a) => a.type === 'investment').map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
               </option>
             ))}
           </optgroup>
@@ -247,8 +257,8 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
         )}
         {f.type === 'transfer' && (
           <div className="row2">
-            {ownSelect(f.sourceId, (v) => set('sourceId', v), 'From account', 'tx-src')}
-            {ownSelect(f.destId, (v) => set('destId', v), 'To account', 'tx-dst')}
+            {ownSelect(f.sourceId, (v) => set('sourceId', v), 'From account', 'tx-src', true)}
+            {ownSelect(f.destId, (v) => set('destId', v), 'To account', 'tx-dst', true)}
           </div>
         )}
 

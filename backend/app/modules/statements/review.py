@@ -159,6 +159,22 @@ def find_duplicate(db: Session, row: StatementRow, account_id: int, claimed: set
     for tid in db.scalars(q.order_by(Transaction.date)):
         if tid not in claimed:
             return tid
+    # money into / out of an investment (a SIP recorded from a CAS is dated on the fund's
+    # side, a few days after the bank debit): same amount within ±6 days
+    inv = select(Account.id).where(Account.type == AccountType.investment.value)
+    q = select(Transaction.id).where(
+        Transaction.type == "transfer",
+        or_(
+            (Transaction.source_id == account_id) & Transaction.destination_id.in_(inv),
+            (Transaction.destination_id == account_id) & Transaction.source_id.in_(inv),
+        ),
+        Transaction.amount == abs(row.amount),
+        Transaction.date >= row.date - timedelta(days=6),
+        Transaction.date <= row.date + timedelta(days=6),
+    )
+    for tid in db.scalars(q.order_by(Transaction.date)):
+        if tid not in claimed:
+            return tid
     return None
 
 
@@ -269,13 +285,17 @@ def _suggest(
     plans: list[CardEmi] | None = None,
     interest_days: dict | None = None,
     loans: list | None = None,
+    investments: list | None = None,
 ) -> None:
     """Kind, category and transfer account for a row you haven't edited."""
+    from ..investments.matching import best as best_investment
+
     row.payee = payee_from(row.description, row.counterparty, row.name_hint)
     row.flag = None
     row.transfer_account_id = None
     row.emi_id = None
     row.loan_id = row.loan_action = None
+    inv_hit = None
     card = account is not None and account.type == AccountType.credit_card
     if card:
         if row.amount > 0 and TRANSFER_RE.search(row.raw):
@@ -285,6 +305,8 @@ def _suggest(
     elif row.amount < 0 and loans and (hit := match_loan(row.raw, -row.amount, loans)):
         loan, action = hit
         row.kind, row.loan_id, row.loan_action = "expense", loan.id, action
+    elif investments and row.amount and (inv_hit := best_investment(investments, row.raw, -row.amount)):
+        row.kind = "transfer"  # money into an investment (SIP, premium, RD …) or back from it
     elif TRANSFER_RE.search(row.raw) or (row.amount < 0 and CARD_APP_RE.search(row.raw)):
         row.kind = "transfer"
     else:
@@ -300,6 +322,10 @@ def _suggest(
     if row.kind == "transfer" and account is not None:
         row.transfer_account_id, tw = suggest_transfer_account(db, account, row)
         why, kind = tw, ("card" if tw else None)
+    if inv_hit is not None:
+        name = next(i.account.name for i in investments or [] if i.account_id == inv_hit.account_id)
+        row.transfer_account_id, cat, bud, kind = inv_hit.account_id, None, None, "investment"
+        why = f"{'Into' if row.amount < 0 else 'From'} {name} — {inv_hit.why}"
     if row.loan_id:
         loan = next(ln for ln, _ in loans or [] if ln.id == row.loan_id)
         cat, bud, kind = _category_id(db, "Loan / EMI"), None, "loan"
@@ -325,7 +351,11 @@ def refresh(db: Session, imp: StatementImport) -> None:
     plans = plans_of(db, account.id) if on_card else []
     interest_days: dict = {}
     loans = []
+    investments: list = []
     if account is not None and not on_card:
+        from ..investments.models import Investment
+
+        investments = list(db.scalars(select(Investment).where(Investment.closed_on.is_(None))).unique())
         for ln in db.scalars(select(Loan).where(Loan.closed_on.is_(None))).unique():
             out = loan_out(db, ln)
             if out.status == "active":
@@ -334,7 +364,7 @@ def refresh(db: Session, imp: StatementImport) -> None:
         if row.transaction_id:  # already imported
             continue
         if not row.user_set:
-            _suggest(db, account, row, plans, interest_days, loans)
+            _suggest(db, account, row, plans, interest_days, loans, investments)
             row.link_txn_id = None
         row.duplicate_of = None
         # a conversion already recorded when the EMI was added on the card page

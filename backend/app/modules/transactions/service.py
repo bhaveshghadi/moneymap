@@ -82,8 +82,37 @@ def resolve_accounts(db: Session, body: TransactionIn) -> tuple[Account, Account
     return src, dst
 
 
+FALLBACK = {TransactionType.withdrawal: "Spending", TransactionType.deposit: "Income"}
+
+
+def _hidden_name(db: Session, category_id: int | None, type_: TransactionType) -> str:
+    """The payee kept behind the scenes when none is given: the category's name."""
+    cat = db.get(Category, category_id) if category_id is not None else None
+    return cat.name if cat is not None else FALLBACK[type_]
+
+
+def _with_payee(db: Session, t: Transaction, body: TransactionIn, is_new: bool) -> TransactionIn:
+    """The page doesn't ask who was paid. Keep the payee an edited transaction already has
+    (from a statement or the Inbox), unless it was only a stand-in name; else use the category's."""
+    if body.type == TransactionType.transfer:
+        return body
+    side = "destination" if body.type == TransactionType.withdrawal else "source"
+    if getattr(body, f"{side}_id") or (getattr(body, f"{side}_name") or "").strip():
+        return body
+    if not is_new and t.type == body.type:
+        had: Account | None = getattr(t, side)
+        stand_in = had is not None and had.name.lower() in {
+            _hidden_name(db, t.category_id, t.type).lower(),
+            FALLBACK[t.type].lower(),
+        }
+        if had is not None and not stand_in:
+            return body.model_copy(update={f"{side}_id": had.id})
+    return body.model_copy(update={f"{side}_name": _hidden_name(db, body.category_id, body.type)})
+
+
 def apply_body(db: Session, t: Transaction, body: TransactionIn, is_new: bool) -> None:
     """Fill `t` from the request body after validating it. `is_new` allows bill auto-matching."""
+    body = _with_payee(db, t, body, is_new)
     src, dst = resolve_accounts(db, body)
     category_id = None
     # Categories describe spending/income; transfers between your own accounts stay uncategorised.

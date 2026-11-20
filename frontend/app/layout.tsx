@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Schibsted_Grotesk, Hanken_Grotesk, IBM_Plex_Mono } from 'next/font/google';
 import './globals.css';
+import { THEME_BOOT, ThemeWatcher } from '@/ui/lib/theme';
 
 // The design system type scale. next/font downloads the fonts at
 // build time and serves them from this app — no runtime Google Fonts request.
@@ -16,8 +17,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${schibstedGrotesk.variable} ${hankenGrotesk.variable} ${ibmPlexMono.variable}`}>
-      <body suppressHydrationWarning>{children}</body>
+    <html lang="en" className={`${schibstedGrotesk.variable} ${hankenGrotesk.variable} ${ibmPlexMono.variable}`} suppressHydrationWarning>
+      <head>
+        {/* light / dark before the first paint (Settings → Appearance) */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
+      <body suppressHydrationWarning>
+        <ThemeWatcher />
+        {children}
+      </body>
     </html>
   );
 }

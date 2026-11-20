@@ -103,6 +103,8 @@
   --bg-subtle:  var(--neutral-50);
   --bg-sunken:  var(--neutral-100);
   --bg-dark:    #14152A;        /* footers / dark sections */
+  --surface:       #FFFFFF;                 /* cards, panels, inputs, dialogs */
+  --surface-glass: rgba(255,255,255,0.82);  /* the blurred top bar */
 
   --border:        var(--neutral-200);
   --border-strong: var(--neutral-300);
@@ -124,7 +126,7 @@
   /* Signature gradients (the B2C twist on Stripe's cool hero) */
   --gradient-hero: linear-gradient(135deg, #6354E6 0%, #8E7BF0 42%, #FF8A6B 100%);
   --gradient-mint: linear-gradient(135deg, #15A877 0%, #2FBE8B 60%, #92E4C6 100%);
-  --gradient-soft: linear-gradient(180deg, #F6F7FB 0%, #FFFFFF 100%);
+  --gradient-soft: linear-gradient(180deg, var(--neutral-50) 0%, var(--surface) 100%);
 
   /* ============================================================
      RADII
@@ -168,6 +170,89 @@
   --dur-fast: 120ms;
   --dur: 200ms;
   --dur-slow: 360ms;
+}
+
+/* ============================================================
+   DARK THEME — <html data-theme="dark"> (set from Settings → Appearance,
+   or from the system when "Match system" is chosen; see ui/lib/theme.ts).
+   The ramps are mirrored: the light tints (-50/-100) become dark tinted
+   backgrounds and the dark shades (-700…-900) become light text, so every
+   "tint background + strong text" pair keeps working. Brand mid-tones stay.
+   ============================================================ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --indigo-50:  #23213F;
+  --indigo-100: #2D2957;
+  --indigo-200: #3C3680;
+  --indigo-300: #5B4FC4;
+  --indigo-400: #7A6CEB;
+  --indigo-500: #7465F0;
+  --indigo-600: #8A7DF2;
+  --indigo-700: #B4ABF7;
+  --indigo-800: #CDC7FA;
+  --indigo-900: #E3E0FC;
+
+  --mint-50:  #11302A;
+  --mint-100: #164034;
+  --mint-200: #1D5C47;
+  --mint-300: #2A8A66;
+  --mint-400: #2FBE8B;
+  --mint-500: #2CC28C;
+  --mint-600: #4DD3A0;
+  --mint-700: #74E0B8;
+
+  --coral-50:  #3A2320;
+  --coral-100: #4C2B24;
+  --coral-300: #C9765D;
+  --coral-400: #FF8F72;
+  --coral-500: #FF7E5C;
+  --coral-600: #FFA085;
+
+  --amber-50:  #33291A;
+  --amber-100: #45361C;
+  --amber-400: #F2A93B;
+  --amber-500: #F0A22E;
+  --amber-600: #F4B652;
+  --amber-700: #F7C877;
+
+  --red-50:  #3A1D22;
+  --red-100: #4D252B;
+  --red-400: #F07A7D;
+  --red-500: #F0666A;
+  --red-600: #F58A8D;
+
+  --glyph-blue:   #5B9BF8;
+  --glyph-purple: #B57BF8;
+  --glyph-amber:  #F5AE33;
+  --glyph-red:    #F26B6B;
+  --glyph-slate:  #A3B0C4;
+
+  /* dark grey with a navy tint: page darkest, cards a step lighter */
+  --neutral-0:   #1B1E2C;
+  --neutral-25:  #181B28;
+  --neutral-50:  #121420;
+  --neutral-100: #232738;
+  --neutral-200: #2D3246;
+  --neutral-300: #3B4158;
+  --neutral-400: #5A6179;
+  --neutral-500: #8B92A7;
+  --neutral-550: #9AA1B5;
+  --neutral-600: #AEB4C6;
+  --neutral-700: #C8CDDB;
+  --neutral-800: #DEE1EA;
+  --neutral-900: #EEF0F6;
+
+  --surface:       #1B1E2C;
+  --surface-glass: rgba(27,30,44,0.85);
+  --bg-dark:       #0C0E17;
+
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.30);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.30), 0 2px 6px rgba(0,0,0,0.22);
+  --shadow-md: 0 2px 4px rgba(0,0,0,0.28), 0 8px 20px rgba(0,0,0,0.32);
+  --shadow-lg: 0 4px 8px rgba(0,0,0,0.30), 0 16px 40px rgba(0,0,0,0.45);
+  --shadow-brand: 0 6px 18px rgba(116,101,240,0.28);
+  --shadow-focus: 0 0 0 3px rgba(138,125,242,0.40);
 }
 
 /* ============================================================

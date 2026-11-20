@@ -97,6 +97,13 @@ export function counterparty(t: Txn): string {
   return `${t.source.name} → ${t.destination.name}`;
 }
 
+/** The row's title: the description, or (none typed) its category. Who was paid isn't shown. */
+export function txnTitle(t: Txn): string {
+  if (t.description.trim()) return t.description;
+  if (t.type === 'transfer') return 'Transfer';
+  return t.category?.name ?? (t.type === 'deposit' ? 'Income' : 'Spending');
+}
+
 /** Which of your own accounts the transaction touched. */
 export function ownAccount(t: Txn): string {
   if (t.type === 'withdrawal') return t.source.name;

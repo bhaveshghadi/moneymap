@@ -41,7 +41,9 @@ export default function LoginPage() {
       <form className="onb-card fade-in" onSubmit={submit}>
         <div className="onb-logo">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/assets/logo-wordmark.svg" alt="MoneyMap" style={{ height: 34 }} />
+          <img className="logo-light" src="/assets/logo-wordmark.svg" alt="MoneyMap" style={{ height: 34 }} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="logo-dark" src="/assets/logo-wordmark-dark.svg" alt="MoneyMap" style={{ height: 34 }} />
         </div>
         <h2>{setup ? 'Set up MoneyMap' : 'Welcome back'}</h2>
         <p className="lead">

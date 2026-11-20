@@ -118,6 +118,7 @@ export function OverviewPage() {
           lbl="Net worth"
           icon="scale"
           val={<Money amount={rs(data.net_worth)} precise pos={data.net_worth >= 0} sign={data.net_worth < 0} />}
+          fit={rs(Math.abs(data.net_worth)).toLocaleString('en-IN', { minimumFractionDigits: 2 }).length + 2}
           sub={
             data.cards_owed + data.loans_owed > 0 ? (
               <>

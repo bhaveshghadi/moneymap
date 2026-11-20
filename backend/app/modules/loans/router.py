@@ -363,13 +363,13 @@ def prepay(account_id: int, body: PrepayIn, db: Session = Depends(get_db)) -> Lo
     if body.transaction_id and existing is None:
         raise _bad("That transaction no longer exists.")
     src = None
-    if existing is None:
+    if existing is None and body.record_payment:
         src = (
             db.get(Account, body.from_account_id or loan.pay_from_id)
             if (body.from_account_id or loan.pay_from_id)
             else None
         )
-    record_prepay(db, loan, body.date, body.amount, body.mode, src, existing, body.fee)
+    record_prepay(db, loan, body.date, body.amount, body.mode, src, existing, body.fee, body.record_payment)
     db.commit()
     db.refresh(loan)
     return loan_out(db, loan, detail=True)  # type: ignore[return-value]

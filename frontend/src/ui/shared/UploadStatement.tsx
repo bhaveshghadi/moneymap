@@ -95,6 +95,12 @@ function Body({ cas }: { cas: boolean }) {
         router.push(`/investments/cas/${err.detail.cas_id}`);
         return;
       }
+      if (code === 'loan_statement' && err instanceof ApiError && (err.detail?.file_ref || err.detail?.attachment_id)) {
+        close(); // a lender's loan statement: read in Loans
+        const d = err.detail;
+        router.push(d.attachment_id ? `/loans?attachment=${d.attachment_id}` : `/loans?file=${d.file_ref}`);
+        return;
+      }
       if (code === 'password_required' || code === 'wrong_password') {
         setNeedPw(true);
         setTimeout(() => pwRef.current?.focus(), 50);

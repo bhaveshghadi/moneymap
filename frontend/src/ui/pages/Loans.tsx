@@ -1,7 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api } from '../lib/api';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { api, replaceQuery } from '../lib/api';
 import { useApi, useShell } from '../contexts/ShellCtx';
 import type { Loan } from '../lib/types';
 import { dueText, fmtDate, rs } from '../lib/format';
@@ -14,10 +15,28 @@ import { ErrorState } from '../primitives/ErrorState';
 import { CategoryGlyph } from '../primitives/CategoryGlyph';
 import { Progress } from '../shared/Progress';
 import { LoanForm, kindLabel } from '../shared/LoanForm';
+import { LoanStatementDialog } from '../shared/LoanStatement';
 
 export function LoansPage() {
   const { data, error, reload } = useApi<Loan[]>('/loans');
   const [adding, setAdding] = useState(false);
+  const [statement, setStatement] = useState<{ attachmentId?: number; fileRef?: string } | null>(null);
+  const sp = useSearchParams();
+  const pathname = usePathname();
+  // /loans?attachment=12 or ?file=<ref>: a loan statement opened from the Inbox or a statement upload.
+  // Applied while rendering, once per new URL (as on the Accounts page).
+  const search = sp.toString();
+  const [seenSearch, setSeenSearch] = useState<string | null>(null);
+  if (search !== seenSearch) {
+    setSeenSearch(search);
+    const att = Number(sp.get('attachment')) || undefined;
+    const file = sp.get('file') || undefined;
+    if (att || file) setStatement({ attachmentId: att, fileRef: file });
+  }
+  // …then drop it from the address bar so a reload doesn't open it again
+  useEffect(() => {
+    if (sp.get('attachment') || sp.get('file')) replaceQuery(pathname, '');
+  }, [sp, pathname]);
   const active = (data ?? []).filter((l) => l.status === 'active');
   const owed = active.reduce((s, l) => s + l.outstanding, 0);
   const monthly = active.reduce((s, l) => s + l.emi, 0);
@@ -31,6 +50,7 @@ export function LoansPage() {
           <p>What&apos;s left on each loan, the next EMI, and the full repayment schedule.</p>
         </div>
         <div className="actions">
+          <Button variant="secondary" icon="file-search" onClick={() => setStatement({})}>Add from statement</Button>
           <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add loan</Button>
         </div>
       </div>
@@ -72,6 +92,7 @@ export function LoansPage() {
         </>
       )}
       {adding && <LoanForm onClose={() => setAdding(false)} />}
+      {statement && <LoanStatementDialog attachmentId={statement.attachmentId} fileRef={statement.fileRef} onClose={() => setStatement(null)} />}
     </div>
   );
 }

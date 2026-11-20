@@ -18,6 +18,7 @@ import { DrawerHead } from '../shared/DrawerHead';
 import { Progress } from '../shared/Progress';
 import { COUNT_LABEL, FIRST_INTEREST_LABEL, LOAN_KINDS, METHOD_LABEL, kindLabel } from '../shared/LoanForm';
 import { LoanChangesList, PrepayDialog, RateDialog } from '../shared/LoanChanges';
+import { LoanStatementDialog } from '../shared/LoanStatement';
 import { SegmentedControl } from '../primitives/SegmentedControl';
 
 export function LoanDetailPage({ id }: { id: number }) {
@@ -27,6 +28,7 @@ export function LoanDetailPage({ id }: { id: number }) {
   const [linking, setLinking] = useState(false);
   const [prepaying, setPrepaying] = useState(false);
   const [rating, setRating] = useState(false);
+  const [fromStatement, setFromStatement] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -79,6 +81,7 @@ export function LoanDetailPage({ id }: { id: number }) {
         <div className="actions">
           <Button variant="ghost" icon="settings" onClick={() => setEditing(true)}>Edit</Button>
           <Button variant="secondary" icon="link" onClick={() => setLinking(true)}>Move past EMIs</Button>
+          <Button variant="ghost" icon="file-search" onClick={() => setFromStatement(true)}>Update from statement</Button>
           {l.supports_changes && l.status === 'active' && (
             <>
               <Button variant="secondary" icon="piggy-bank" onClick={() => setPrepaying(true)}>Part-payment</Button>
@@ -244,6 +247,7 @@ export function LoanDetailPage({ id }: { id: number }) {
       {editing && <EditLoan loan={l} onClose={() => setEditing(false)} />}
       {linking && <LinkPast loan={l} onClose={() => setLinking(false)} />}
       {prepaying && <PrepayDialog loan={l} onClose={() => setPrepaying(false)} />}
+      {fromStatement && <LoanStatementDialog accountId={l.id} onClose={() => setFromStatement(false)} />}
       {rating && <RateDialog loan={l} onClose={() => setRating(false)} />}
     </div>
   );

@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -25,6 +26,7 @@ from ..gmail.fetch import attachments_dir
 from ..gmail.models import GmailAttachment
 from ..loans.actions import link_payments, record_prepay
 from ..loans.models import Loan
+from ..loans.statement import is_loan_statement
 from ..transactions.models import Transaction, TransactionType
 from ..transactions.schemas import TransactionIn
 from ..transactions.service import apply_body, sync_inbox_status, txn_out
@@ -334,8 +336,9 @@ def upload_statement(body: StatementUploadIn, db: Session = Depends(get_db)) -> 
             body.remember_password,
             {"file_sha256": sha},
         )
-    except HTTPException:
-        path.unlink(missing_ok=True)  # nothing kept until it opens
+    except HTTPException as e:
+        if not (isinstance(e.detail, dict) and e.detail.get("code") == "loan_statement"):
+            path.unlink(missing_ok=True)  # nothing kept until it opens
         raise
     matched = _match_account(db, parsed.account_last4, parsed.doc_type)
     chosen = account or matched
@@ -388,6 +391,35 @@ def _cas_found(cas_id: int) -> HTTPException:
     )
 
 
+LOAN_PASSWORD_KEY = "pdf_password:loans"  # a loan statement uploaded from Loans
+# A loan statement opened as a bank statement: its password, kept in memory for a few minutes
+# so the loan review can read it without asking again (never stored).
+_JUST_OPENED: dict[str, tuple[str, float]] = {}
+JUST_OPENED_SECONDS = 600
+
+
+def password_just_used(sha: str | None) -> str | None:
+    now = time.monotonic()
+    for k in [k for k, (_, t) in _JUST_OPENED.items() if now - t > JUST_OPENED_SECONDS]:
+        del _JUST_OPENED[k]
+    hit = _JUST_OPENED.get(sha or "")
+    return hit[0] if hit else None
+
+
+def _loan_found(source: dict | None) -> HTTPException:
+    """A lender's loan statement: the page opens its review in Loans."""
+    src = source or {}
+    return HTTPException(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        {
+            "code": "loan_statement",
+            "message": "This is a loan statement — opening it in Loans.",
+            "attachment_id": src.get("attachment_id"),
+            "file_ref": src.get("file_sha256"),
+        },
+    )
+
+
 def uploads_dir() -> Path:
     d = get_settings().data_dir / "uploads"
     d.mkdir(parents=True, exist_ok=True)
@@ -419,6 +451,34 @@ def _read_pdf_file(
     sha = (source or {}).get("file_sha256")
     if sha and (cas_id := db.scalar(select(CasImport.id).where(CasImport.file_sha256 == sha))):
         raise _cas_found(cas_id)  # opened before: no password needed again
+    candidates, pw = unlock_pdf(db, path, filename, key, password, remember)
+    if any(is_cas(text) for _, text in candidates):
+        from ..investments.cas_service import open_draft
+
+        cas = open_draft(db, candidates, filename, **(source or {}))
+        db.commit()
+        raise _cas_found(cas.id)
+    if any(is_loan_statement(text) for _, text in candidates):
+        if pw and sha:
+            _JUST_OPENED[sha] = (pw, time.monotonic())
+        db.commit()  # a password to remember
+        raise _loan_found(source)
+    best = None
+    for method, text in candidates:
+        parsed = parse_statement(text, "bank_statement")
+        sc = score(parsed)
+        log.info("statement %s: method=%s rows=%d balances_ok=%d mismatches=%d", filename, method, sc[2], sc[0], -sc[1])
+        if best is None or sc > best[0]:
+            best = (sc, method, text, parsed)
+    log.info("statement %s: using %s", filename, best[1])
+    return best[2], best[3]
+
+
+def unlock_pdf(
+    db: Session, path: Path, filename: str, key: str | None, password: str | None, remember: bool
+) -> tuple[list[tuple[str, str]], str | None]:
+    """Open the PDF (with the given or remembered password) and extract its text several
+    ways. Returns the extractions and the password that opened it."""
     saved = db.get(Setting, key) if key else None
     remembered = None
     if saved:
@@ -440,21 +500,7 @@ def _read_pdf_file(
         row = saved or Setting(key=key, value="")
         row.value = encrypt(json.dumps({"password": password}))
         db.merge(row)
-    if any(is_cas(text) for _, text in candidates):
-        from ..investments.cas_service import open_draft
-
-        cas = open_draft(db, candidates, filename, **(source or {}))
-        db.commit()
-        raise _cas_found(cas.id)
-    best = None
-    for method, text in candidates:
-        parsed = parse_statement(text, "bank_statement")
-        sc = score(parsed)
-        log.info("statement %s: method=%s rows=%d balances_ok=%d mismatches=%d", filename, method, sc[2], sc[0], -sc[1])
-        if best is None or sc > best[0]:
-            best = (sc, method, text, parsed)
-    log.info("statement %s: using %s", filename, best[1])
-    return best[2], best[3]
+    return candidates, pw
 
 
 @router.post("/{sid}/reread-pdf", response_model=StatementDetail)

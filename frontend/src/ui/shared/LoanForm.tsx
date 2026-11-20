@@ -1,9 +1,9 @@
 'use client';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Account, Category, LoanCountMode, LoanDetail, LoanFirstInterest, LoanKind, LoanLinkable, LoanMethod } from '../lib/types';
+import type { Account, Category, LoanCountMode, LoanDetail, LoanFirstInterest, LoanKind, LoanLinkable, LoanMethod, LoanStatementResult } from '../lib/types';
 import { api, qs } from '../lib/api';
-import { fmtDate, inr, rs, toPaise } from '../lib/format';
+import { fmtDate, inr, paiseToInput, rs, toPaise, todayIso } from '../lib/format';
 import { useApi, useShell } from '../contexts/ShellCtx';
 import { useMask } from '../contexts/MaskCtx';
 import { Dialog, useDialogClose } from '../primitives/Dialog';
@@ -13,6 +13,7 @@ import { SegmentedControl } from '../primitives/SegmentedControl';
 import { Icon } from '../primitives/Icon';
 import { DrawerHead } from './DrawerHead';
 import { CategoryOptions } from './CategoryOptions';
+import { CheckNote, StatementEvents, applyEvents, initialPicks, type EventPick } from './LoanStatement';
 
 export const LOAN_KINDS: { value: LoanKind; label: string }[] = [
   { value: 'home', label: 'Home loan' },
@@ -111,44 +112,79 @@ export function reducingPreview(principal: number, rateBp: number, emi: number, 
 export function LoanForm({ onClose }: { onClose: () => void }) {
   return (
     <Dialog onClose={onClose} label="Add loan" width={600}>
-      <Body />
+      <LoanFormBody />
     </Dialog>
   );
 }
 
-function Body() {
+const FIELD_NAMES: Record<string, string> = {
+  principal: 'loan amount',
+  rate: 'interest rate',
+  tenure: 'number of EMIs',
+  emi: 'EMI',
+  first_emi_date: 'first EMI date',
+  loan_number: 'loan number',
+  lender: 'lender',
+};
+
+/** The form's starting values: empty, or filled in from a loan statement. */
+function startValues(st?: LoanStatementResult) {
+  const v = <T,>(k: keyof LoanStatementResult['fields']) => (st?.fields[k]?.value ?? null) as T | null;
+  const kind = (v<string>('kind') ?? 'personal') as LoanKind;
+  const lender = v<string>('lender') ?? '';
+  const first = v<string>('first_emi_date') ?? '';
+  const paid = v<number>('emis_paid');
+  const money = (k: keyof LoanStatementResult['fields']) => {
+    const p = v<number>(k);
+    return p ? paiseToInput(p) : '';
+  };
+  return {
+    name: st ? [lender, kindLabel(kind).toLowerCase()].filter(Boolean).join(' ') : '',
+    lender,
+    kind,
+    loanNumber: (v<string>('loan_number') ?? '').slice(-32),
+    method: (v<string>('method') ?? 'reducing') as LoanMethod,
+    countMode: 'whole_emi' as LoanCountMode,
+    principal: money('principal'),
+    rate: v<number>('rate') !== null ? String(v<number>('rate')) : '',
+    tenure: v<number>('tenure') !== null ? String(v<number>('tenure')) : '',
+    emi: money('emi'),
+    firstEmi: first,
+    disbursed: v<string>('disbursed_date') ?? '',
+    firstInterest: (v<string>('first_interest') ?? 'month') as LoanFirstInterest,
+    payFrom: '',
+    start: (st && ((paid ?? 0) > 0 || (first && first <= todayIso())) ? 'existing' : 'new') as 'new' | 'existing',
+    money: 'none' as 'received' | 'seller' | 'none',
+    receivedInto: '',
+    seller: '',
+    categoryId: '',
+    paidBefore: paid !== null ? String(paid) : '',
+    notes: '',
+  };
+}
+
+export function LoanFormBody({ initial, banner }: { initial?: LoanStatementResult; banner?: ReactNode } = {}) {
   const close = useDialogClose();
   const router = useRouter();
   const { bump } = useShell();
   const { masked } = useMask();
   const banks = useApi<Account[]>('/accounts?type=asset&type=cash&include_inactive=false');
   const categories = useApi<Category[]>('/categories');
-  const [f, setF] = useState({
-    name: '',
-    lender: '',
-    kind: 'personal' as LoanKind,
-    loanNumber: '',
-    method: 'reducing' as LoanMethod,
-    countMode: 'whole_emi' as LoanCountMode,
-    principal: '',
-    rate: '',
-    tenure: '',
-    emi: '',
-    firstEmi: '',
-    disbursed: '',
-    firstInterest: 'month' as LoanFirstInterest,
-    payFrom: '',
-    start: 'new' as 'new' | 'existing',
-    money: 'none' as 'received' | 'seller' | 'none',
-    receivedInto: '',
-    seller: '',
-    categoryId: '',
-    paidBefore: '',
-    notes: '',
-  });
+  const [f, setF] = useState(() => startValues(initial));
+  const [picks, setPicks] = useState<EventPick[]>(() => initialPicks(initial?.events ?? []));
   const [picked, setPicked] = useState<Record<number, boolean> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [createdId, setCreatedId] = useState<number | null>(null);
+  /** "from statement" / "worked out" next to a label filled in from the statement. */
+  const tag = (k: keyof LoanStatementResult['fields']) => {
+    const src = initial?.fields[k]?.source;
+    if (!src) return null;
+    return <span className={`ls-tag ${src}`}>{src === 'statement' ? 'from statement' : 'worked out'}</span>;
+  };
+  const missing = initial
+    ? (['principal', 'rate', 'tenure', 'emi', 'first_emi_date'] as const).filter((k) => !initial.fields[k]).map((k) => FIELD_NAMES[k])
+    : [];
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
   const money = (p: number) => (masked ? '₹•••' : inr(rs(p)));
 
@@ -218,13 +254,22 @@ function Body() {
       notes: f.notes || null,
     };
     setSaving(true);
+    let id: number | null = null;
     try {
       const res = await api<LoanDetail>('/loans', { method: 'POST', body });
+      id = res.id;
+      if (initial) await applyEvents(res.id, initial.events, picks); // ticked part-payments / rate changes
       bump();
       close();
       router.push(`/loans/${res.id}`);
     } catch (err) {
-      setError((err as Error).message);
+      if (id !== null) {
+        bump();
+        setCreatedId(id);
+        setError(`The loan was added, but a part-payment or rate change couldn’t be recorded: ${(err as Error).message} Add it on the loan page.`);
+      } else {
+        setError((err as Error).message);
+      }
       setSaving(false);
     }
   };
@@ -233,16 +278,33 @@ function Body() {
 
   return (
     <form onSubmit={submit} style={{ display: 'contents' }}>
-      <DrawerHead title="Add loan" sub="Amounts are in ₹" lead={<span className="ico" style={{ background: 'var(--coral-50)', color: 'var(--coral-600)' }}><Icon name="hand-coins" size={20} /></span>} />
+      <DrawerHead
+        title={initial ? 'Add loan from statement' : 'Add loan'}
+        sub={initial ? initial.filename : 'Amounts are in ₹'}
+        lead={<span className="ico" style={{ background: 'var(--coral-50)', color: 'var(--coral-600)' }}><Icon name={initial ? 'file-search' : 'hand-coins'} size={20} /></span>}
+      />
       <div className="drawer-body">
         {error && <div className="form-error" role="alert">{error}</div>}
+        {initial && (
+          <>
+            {banner}
+            <div className="note info" style={{ marginBottom: 12 }}>
+              <Icon name="file-check" size={15} />
+              <span>
+                Filled in from the statement — check each value. Ones marked <i>worked out</i> come from the repayment schedule or the other figures.
+                {missing.length > 0 && <> <b>Not found:</b> {missing.join(', ')} — fill {missing.length === 1 ? 'it' : 'them'} in.</>}
+              </span>
+            </div>
+            <CheckNote result={initial} />
+          </>
+        )}
         <div className="row2">
           <div className="field">
             <label htmlFor="ln-name">Name</label>
             <input id="ln-name" className="inp" value={f.name} onChange={(e) => set('name', e.target.value)} maxLength={120} placeholder="e.g. HDFC home loan" />
           </div>
           <div className="field">
-            <label htmlFor="ln-kind">Type</label>
+            <label htmlFor="ln-kind">Type {tag('kind')}</label>
             <select id="ln-kind" className="inp" value={f.kind} onChange={(e) => set('kind', e.target.value as LoanKind)}>
               {LOAN_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
             </select>
@@ -250,11 +312,11 @@ function Body() {
         </div>
         <div className="row2">
           <div className="field">
-            <label htmlFor="ln-lender">Lender</label>
+            <label htmlFor="ln-lender">Lender {tag('lender')}</label>
             <input id="ln-lender" className="inp" value={f.lender} onChange={(e) => set('lender', e.target.value)} maxLength={120} placeholder="e.g. HDFC Bank" />
           </div>
           <div className="field">
-            <label htmlFor="ln-no">Loan account number (or last digits)</label>
+            <label htmlFor="ln-no">Loan account number (or last digits) {tag('loan_number')}</label>
             <input id="ln-no" className="inp" value={f.loanNumber} onChange={(e) => set('loanNumber', e.target.value)} maxLength={32} placeholder="helps match EMIs in bank statements" />
           </div>
         </div>
@@ -282,39 +344,39 @@ function Body() {
           </div>
           <div className="row2">
             <div className="field">
-              <label htmlFor="ln-amt">Loan amount (₹){f.method === 'emi_only' ? ' — optional' : ''}</label>
+              <label htmlFor="ln-amt">Loan amount (₹){f.method === 'emi_only' ? ' — optional' : ''} {tag('principal')}</label>
               <input id="ln-amt" className="inp" inputMode="decimal" value={f.principal} onChange={(e) => set('principal', e.target.value)} placeholder="e.g. 500000" />
             </div>
             {f.method !== 'emi_only' ? (
               <div className="field">
-                <label htmlFor="ln-rate">Interest % a year{f.method === 'flat' ? ' (flat)' : ''}</label>
+                <label htmlFor="ln-rate">Interest % a year{f.method === 'flat' ? ' (flat)' : ''} {tag('rate')}</label>
                 <input id="ln-rate" className="inp" inputMode="decimal" value={f.rate} onChange={(e) => set('rate', e.target.value)} placeholder="e.g. 10.5" />
               </div>
             ) : (
               <div className="field">
-                <label htmlFor="ln-emi">EMI (₹)</label>
+                <label htmlFor="ln-emi">EMI (₹) {tag('emi')}</label>
                 <input id="ln-emi" className="inp" inputMode="decimal" value={f.emi} onChange={(e) => set('emi', e.target.value)} placeholder="e.g. 13462" />
               </div>
             )}
           </div>
           <div className="row2">
             <div className="field">
-              <label htmlFor="ln-ten">Number of EMIs (months)</label>
+              <label htmlFor="ln-ten">Number of EMIs (months) {tag('tenure')}</label>
               <input id="ln-ten" className="inp" inputMode="numeric" value={f.tenure} onChange={(e) => set('tenure', e.target.value.replace(/\D/g, ''))} placeholder="e.g. 60" />
             </div>
             <div className="field">
-              <label htmlFor="ln-first">First EMI date</label>
+              <label htmlFor="ln-first">First EMI date {tag('first_emi_date')}</label>
               <input id="ln-first" className="inp" type="date" value={f.firstEmi} onChange={(e) => set('firstEmi', e.target.value)} />
             </div>
           </div>
           {f.method === 'reducing' && (
             <div className="row2">
               <div className="field">
-                <label htmlFor="ln-taken">Loan taken on (paid out) — optional</label>
+                <label htmlFor="ln-taken">Loan taken on (paid out) — optional {tag('disbursed_date')}</label>
                 <input id="ln-taken" className="inp" type="date" value={f.disbursed} onChange={(e) => set('disbursed', e.target.value)} />
               </div>
               <div className="field">
-                <label htmlFor="ln-firstint">Interest in the first EMI</label>
+                <label htmlFor="ln-firstint">Interest in the first EMI {tag('first_interest')}</label>
                 <select id="ln-firstint" className="inp" value={f.firstInterest} onChange={(e) => set('firstInterest', e.target.value as LoanFirstInterest)}>
                   {(Object.keys(FIRST_INTEREST_LABEL) as LoanFirstInterest[]).map((k) => <option key={k} value={k}>{FIRST_INTEREST_LABEL[k]}</option>)}
                 </select>
@@ -328,7 +390,7 @@ function Body() {
           )}
           {f.method !== 'emi_only' && (
             <div className="field">
-              <label htmlFor="ln-emi2">EMI as the lender charges it (₹) — optional</label>
+              <label htmlFor="ln-emi2">EMI as the lender charges it (₹) — optional {tag('emi')}</label>
               <input id="ln-emi2" className="inp" inputMode="decimal" value={f.emi} onChange={(e) => set('emi', e.target.value)} placeholder={workedEmi ? `worked out: ${money(workedEmi)}` : 'worked out from the above'} />
             </div>
           )}
@@ -429,7 +491,7 @@ function Body() {
           </div>
         ) : (
           <div className="field">
-            <label htmlFor="ln-paid">EMIs already paid</label>
+            <label htmlFor="ln-paid">EMIs already paid {tag('emis_paid')}</label>
             <input id="ln-paid" className="inp" inputMode="numeric" value={f.paidBefore} onChange={(e) => set('paidBefore', e.target.value.replace(/\D/g, ''))} placeholder="empty = every EMI dated before today" />
             {candidates.data && candidates.data.length > 0 && (
               <div style={{ marginTop: 10 }}>
@@ -450,10 +512,19 @@ function Body() {
                     </label>
                   ))}
                 </div>
-                <div className="hint">Only payments of the EMI amount can be moved; part-payments come in the next step.</div>
+                <div className="hint">Only payments of the EMI amount can be moved here; part-payments go on the loan page.</div>
               </div>
             )}
           </div>
+        )}
+
+        {initial && initial.events.length > 0 && (
+          <StatementEvents
+            events={initial.events}
+            picks={picks}
+            onChange={(i, p) => setPicks((all) => all.map((x, j) => (j === i ? { ...x, ...p } : x)))}
+            canChange={f.method === 'reducing' || (f.method === 'emi_only' && principal > 0)}
+          />
         )}
 
         <div className="field">
@@ -467,7 +538,11 @@ function Body() {
       <div className="drawer-foot">
         <span className="spacer" />
         <Button variant="secondary" onClick={close}>Cancel</Button>
-        <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Add loan'}</Button>
+        {createdId !== null ? (
+          <Button variant="primary" onClick={() => { close(); router.push(`/loans/${createdId}`); }}>Open the loan</Button>
+        ) : (
+          <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Add loan'}</Button>
+        )}
       </div>
     </form>
   );

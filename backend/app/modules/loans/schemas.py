@@ -84,6 +84,7 @@ class PrepayIn(BaseModel):
     from_account_id: int | None = None  # default: the loan's "paid from" account
     transaction_id: int | None = None  # an existing expense that IS this part-payment (e.g. from a statement)
     fee: int | None = Field(default=None, gt=0, le=10**12)  # the lender's part-payment / closing charge
+    record_payment: bool = True  # False: only the change to the loan (paid before you tracked it)
 
 
 class RateIn(BaseModel):
@@ -218,3 +219,62 @@ class LoanDue(BaseModel):
     n: int
     tenure: int
     overdue: bool
+
+
+# ---------------------------------------------------------------- loan statements (phase 3)
+
+
+class LoanStatementIn(BaseModel):
+    attachment_id: int | None = None  # a PDF fetched from Gmail
+    file_ref: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")  # a PDF uploaded before (its sha256)
+    filename: str | None = Field(default=None, max_length=255)
+    content_b64: str | None = None  # a new upload
+    password: str | None = Field(default=None, max_length=200)
+    remember_password: bool = False
+    account_id: int | None = None  # "Update from statement" on this loan
+
+
+class LoanStatementField(BaseModel):
+    value: str | int | float | None
+    source: Literal["statement", "worked_out"]  # read from the statement, or worked out from its figures
+
+
+class LoanStatementEvent(BaseModel):
+    kind: Literal["prepay", "rate"]
+    date: Date
+    amount: int | None = None  # prepay
+    rate: float | None = None  # rate
+    mode: Literal["reduce_tenure", "reduce_emi"] = "reduce_tenure"
+    source: Literal["statement", "schedule"]  # schedule: seen in the schedule, dated the day after the EMI before it
+    text: str | None = None
+    already_recorded: bool = False
+    transaction_id: int | None = None  # prepay: your bank payment for it
+    transaction: str | None = None
+    date_unknown: bool = False
+
+
+class LoanStatementDiff(BaseModel):
+    field: str
+    label: str
+    kind: Literal["money", "date", "rate", "count", "text", "kind", "first_interest", "method"]
+    current: str | int | float | None  # money in paise, dates ISO
+    statement: str | int | float | None
+    patch: dict | None  # PATCH /loans/{id} body; None = shown only
+    note: str | None = None
+
+
+class LoanStatementMatch(BaseModel):
+    account_id: int
+    name: str
+    differences: list[LoanStatementDiff]
+
+
+class LoanStatementOut(BaseModel):
+    filename: str
+    file_ref: str | None
+    attachment_id: int | None
+    fields: dict[str, LoanStatementField]
+    schedule_rows: int
+    check: dict | None  # {rows, max_diff, matches}: the lender's schedule against these terms
+    events: list[LoanStatementEvent]
+    match: LoanStatementMatch | None = None

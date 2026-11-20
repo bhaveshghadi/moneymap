@@ -3,7 +3,7 @@ import { Fragment, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useApi, useShell } from '../contexts/ShellCtx';
-import type { Account, CasAction, CasDetail, CasRow, Investment } from '../lib/types';
+import type { Account, CasAction, CasDetail, CasFund, CasImportMode, CasRow, Investment } from '../lib/types';
 import { api } from '../lib/api';
 import { fmtDate, fmtNav, fmtUnits, rs } from '../lib/format';
 import { Button } from '../primitives/Button';
@@ -21,6 +21,17 @@ const ACTION_LABEL: Record<CasAction, string> = {
   units: 'Units only — no money moved',
   skip: 'Leave out',
 };
+
+type FundChoice = CasImportMode | 'out';
+const CHOICE_LABEL: Record<FundChoice, string> = {
+  both: 'Fund and transactions',
+  fund: 'Fund only',
+  txns: 'Transactions only',
+  out: 'Leave out',
+};
+const choiceOf = (f: CasFund): FundChoice => (f.skip ? 'out' : f.mode);
+/** "Transactions only" adds rows to a fund you already have — not to a new one. */
+const canTxns = (f: CasFund) => !f.skip && f.account_id !== null;
 
 function actionsFor(r: CasRow): CasAction[] {
   if (r.existing) return ['skip'];
@@ -64,19 +75,25 @@ export function CasReviewPage({ id }: { id: number }) {
   if (!c) return <div className="content-wrap"><Skeleton variant="block" height={120} /><Skeleton variant="block" height={300} /></div>;
 
   const draft = c.status === 'draft';
-  const toImport = c.rows.filter((r) => !r.existing && r.action !== 'skip').length;
+  const fundOnly = new Set(c.funds.filter((f) => !f.skip && f.mode === 'fund').map((f) => f.id));
+  const toImport = c.rows.filter((r) => !r.existing && r.action !== 'skip' && !fundOnly.has(r.fund_id)).length;
   const included = c.funds.filter((f) => !f.skip).length;
-  const setImport = (fid: number, on: boolean) =>
-    call(`/investments/cas/${c.id}/funds/${fid}`, 'PATCH', on ? { auto: true } : { skip: true });
-  const setAll = async (on: boolean) => {
-    for (const f of c.funds) if (f.skip === on) await setImport(f.id, on);
+  const choose = (f: CasFund, choice: FundChoice) =>
+    choice === 'out'
+      ? call(`/investments/cas/${c.id}/funds/${f.id}`, 'PATCH', { skip: true })
+      : call(`/investments/cas/${c.id}/funds/${f.id}/mode`, 'PATCH', { mode: choice });
+  const setAll = async (choice: FundChoice) => {
+    for (const f of c.funds) {
+      if (choiceOf(f) === choice || (choice === 'txns' && !canTxns(f))) continue;
+      await choose(f, choice);
+    }
   };
 
   const doImport = async () => {
     setBusy(true);
     setMsg(null);
     try {
-      const r = await api<{ cas: CasDetail; accounts_created: number; opening_replaced?: number; funds_skipped?: number; linked?: number; converted?: number; created?: number; before?: number }>(
+      const r = await api<{ cas: CasDetail; accounts_created: number; opening_replaced?: number; funds_skipped?: number; funds_only?: number; linked?: number; converted?: number; created?: number; before?: number }>(
         `/investments/cas/${c.id}/import`,
         { method: 'POST' },
       );
@@ -88,6 +105,7 @@ export function CasReviewPage({ id }: { id: number }) {
         r.converted ? `${r.converted} bank entr${r.converted === 1 ? 'y' : 'ies'} turned into transfers` : '',
         r.created ? `${r.created} transfer${r.created === 1 ? '' : 's'} added` : '',
         r.before ? `${r.before} older than your records` : '',
+        r.funds_only ? `${r.funds_only} fund${r.funds_only === 1 ? '' : 's'} without transactions` : '',
         r.funds_skipped ? `${r.funds_skipped} fund${r.funds_skipped === 1 ? '' : 's'} left out` : '',
         r.opening_replaced ? 'an amount entered by hand replaced by the CAS history' : '',
       ].filter(Boolean);
@@ -125,8 +143,12 @@ export function CasReviewPage({ id }: { id: number }) {
             </Button>
           )}
           {draft && (
-            <Button variant="primary" icon="download" onClick={doImport} disabled={busy || toImport === 0}>
-              {busy ? 'Working…' : toImport ? `Import ${toImport} row${toImport === 1 ? '' : 's'} · ${included} fund${included === 1 ? '' : 's'}` : 'Nothing new to import'}
+            <Button variant="primary" icon="download" onClick={doImport} disabled={busy || (toImport === 0 && fundOnly.size === 0)}>
+              {busy
+                ? 'Working…'
+                : toImport || fundOnly.size
+                  ? `Import ${included} fund${included === 1 ? '' : 's'}${toImport ? ` · ${toImport} row${toImport === 1 ? '' : 's'}` : ''}`
+                  : 'Nothing new to import'}
             </Button>
           )}
         </div>
@@ -161,32 +183,48 @@ export function CasReviewPage({ id }: { id: number }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
             <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>Funds in this CAS · importing {included} of {c.funds.length}</h3>
             {draft && c.funds.length > 1 && (
-              <span style={{ display: 'flex', gap: 6 }}>
-                <Button variant="ghost" size="sm" disabled={busy || included === c.funds.length} onClick={() => setAll(true)}>Import all</Button>
-                <Button variant="ghost" size="sm" disabled={busy || included === 0} onClick={() => setAll(false)}>Import none</Button>
-              </span>
+              <select
+                className="inp"
+                style={{ width: 'auto', padding: '5px 10px', fontSize: 13 }}
+                aria-label="Set every fund to"
+                value=""
+                disabled={busy}
+                onChange={(e) => e.target.value && setAll(e.target.value as FundChoice)}
+              >
+                <option value="">Set all to…</option>
+                {(Object.keys(CHOICE_LABEL) as FundChoice[]).map((k) => (
+                  <option key={k} value={k}>{CHOICE_LABEL[k]}{k === 'txns' ? ' (funds you have)' : ''}</option>
+                ))}
+              </select>
             )}
           </div>
           <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            Untick a fund you don&apos;t want — for example an old fund you sold long ago. A fund you already have is joined, never added twice.
+            For each fund choose what to bring in: the fund with its transactions, the <b>fund only</b> (today&apos;s units and value, no history),
+            or the <b>transactions only</b> into a fund you already have. A fund you already have is joined, never added twice.
           </p>
           <div className="tbl-wrap">
             <table className="tbl" style={{ fontSize: 13 }}>
               <thead>
-                <tr><th style={{ width: 70 }}>Import</th><th>Fund</th><th className="r hide-sm">Units</th><th className="r hide-sm">Value</th><th>Goes to</th></tr>
+                <tr><th style={{ width: 190 }}>Import</th><th>Fund</th><th className="r hide-sm">Units</th><th className="r hide-sm">Value</th><th>Goes to</th></tr>
               </thead>
               <tbody>
                 {c.funds.map((f) => (
                   <tr key={f.id} style={f.skip ? { opacity: 0.55 } : undefined}>
                     <td>
-                      <input
-                        type="checkbox"
-                        className="cas-import-box"
-                        checked={!f.skip}
+                      <select
+                        className="inp"
+                        style={{ padding: '6px 9px', fontSize: 13, minWidth: 150 }}
+                        value={choiceOf(f)}
                         disabled={!draft || busy}
-                        onChange={(e) => setImport(f.id, e.target.checked)}
-                        aria-label={`Import ${f.scheme}`}
-                      />
+                        onChange={(e) => choose(f, e.target.value as FundChoice)}
+                        aria-label={`What to import for ${f.scheme}`}
+                      >
+                        {(Object.keys(CHOICE_LABEL) as FundChoice[]).map((k) => (
+                          <option key={k} value={k} disabled={k === 'txns' && !canTxns(f)}>
+                            {CHOICE_LABEL[k]}{k === 'txns' && !canTxns(f) ? ' (pick your fund under Goes to)' : ''}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td>
                       <div style={{ fontWeight: 600 }}>
@@ -194,7 +232,19 @@ export function CasReviewPage({ id }: { id: number }) {
                         {f.closing_units === 0 && <span className="badge neutral" style={{ marginLeft: 6 }}>No units left</span>}
                       </div>
                       <div className="muted" style={{ fontSize: 12 }}>{[f.amc, f.folio && `Folio ${f.folio}`, f.isin].filter(Boolean).join(' · ')} · {f.rows} rows</div>
-                      {!f.skip && f.already_imported > 0 && (
+                      {!f.skip && f.mode === 'fund' && (
+                        <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 3 }}>
+                          Fund only: today&apos;s {f.closing_units !== null ? `${fmtUnits(f.closing_units)} units` : 'units'} and value
+                          {f.cost !== null && <>; what you paid, <Money amount={rs(f.cost)} interactive={false} />, counts as already invested</>}. Its {f.rows}{' '}
+                          transactions and their bank payments aren&apos;t imported.
+                        </div>
+                      )}
+                      {!f.skip && f.mode === 'txns' && (
+                        <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 3 }}>
+                          Transactions only: the rows are added to “{f.account_name}”; its name, units and price stay as they are.
+                        </div>
+                      )}
+                      {!f.skip && f.mode !== 'fund' && f.already_imported > 0 && (
                         <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 3 }}>
                           {f.already_imported === f.rows ? 'All' : `${f.already_imported} of ${f.rows}`} transactions already imported from an earlier CAS — skipped.
                         </div>
@@ -205,7 +255,7 @@ export function CasReviewPage({ id }: { id: number }) {
                           invested is replaced by this CAS&apos;s older purchases, so it isn&apos;t counted twice.
                         </div>
                       )}
-                      {!f.skip && f.account_id !== null && f.replaces_opening === null && f.already_imported < f.rows && (
+                      {!f.skip && f.mode === 'both' && f.account_id !== null && f.replaces_opening === null && f.already_imported < f.rows && (
                         <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 3 }}>
                           Joins your fund “{f.account_name}”{f.units_now !== null ? ` (${f.units_now.toLocaleString('en-IN')} units now)` : ''}.
                         </div>
@@ -291,11 +341,15 @@ export function CasReviewPage({ id }: { id: number }) {
                     <tr className="cat-group">
                       <td colSpan={6}>
                         {f.scheme}
-                        {f.skip && <span className="muted" style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}> · not imported</span>}
+                        {(f.skip || f.mode === 'fund') && (
+                          <span className="muted" style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+                            {f.skip ? ' · not imported' : ' · fund only: these transactions are not imported'}
+                          </span>
+                        )}
                       </td>
                     </tr>
                     {c.rows.filter((r) => r.fund_id === f.id).map((r) => (
-                      <Row key={r.id} r={r} banks={banks} draft={draft && !f.skip} busy={busy}
+                      <Row key={r.id} r={r} banks={banks} draft={draft && !f.skip && f.mode !== 'fund'} busy={busy} muted={f.mode === 'fund'}
                            onSet={(action, bank) => call(`/investments/cas/${c.id}/rows/${r.id}`, 'PATCH', { action, bank_account_id: bank ?? null })} />
                     ))}
                   </Fragment>
@@ -316,12 +370,12 @@ export function CasReviewPage({ id }: { id: number }) {
   );
 }
 
-function Row({ r, banks, draft, busy, onSet }: {
-  r: CasRow; banks: Account[]; draft: boolean; busy: boolean; onSet: (a: CasAction, bank?: number | null) => void;
+function Row({ r, banks, draft, busy, muted = false, onSet }: {
+  r: CasRow; banks: Account[]; draft: boolean; busy: boolean; muted?: boolean; onSet: (a: CasAction, bank?: number | null) => void;
 }) {
   const status = r.existing ? ['neutral', 'Already imported'] : r.action === 'link' || r.action === 'convert' ? ['mint', 'Matched'] : r.action === 'skip' ? ['neutral', 'Left out'] : null;
   return (
-    <tr className={r.existing || r.action === 'skip' ? 'muted-row' : ''}>
+    <tr className={muted || r.existing || r.action === 'skip' ? 'muted-row' : ''}>
       <td className="t-mono" style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.date)}</td>
       <td style={{ maxWidth: 300 }}>
         <div style={{ fontWeight: 600 }}>{r.kind_label}</div>

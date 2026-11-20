@@ -276,12 +276,46 @@ def create_draft(db: Session, st: CasStatement, text: str, filename: str, **sour
     return cas
 
 
+def revive(db: Session, cas: CasImport) -> bool:
+    """An imported CAS whose funds (or their rows) were deleted since: back to a draft, so it
+    can be imported again. Funds you left out stay left out."""
+    if cas.status != "imported":
+        return False
+    gone: set[int] = set()
+    for f in cas.funds:
+        if f.skip:
+            continue
+        if f.account_id is None or db.get(Account, f.account_id) is None:
+            gone.add(f.id)  # its investment was deleted
+    for r in cas.rows:
+        if r.fund_txn_id and db.get(FundTxn, r.fund_txn_id) is None:
+            gone.add(r.fund_id)  # rows deleted from the fund
+    if not gone:
+        return False
+    for f in cas.funds:
+        if f.id in gone:
+            if f.account_id is not None and db.get(Account, f.account_id) is None:
+                f.account_id = None
+            f.create_new = False  # suggest again: an existing fund, else a new one
+    for r in cas.rows:
+        if r.fund_id in gone:
+            if r.fund_txn_id and db.get(FundTxn, r.fund_txn_id) is None:
+                r.fund_txn_id = None
+            if r.transaction_id and db.get(Transaction, r.transaction_id) is None:
+                r.transaction_id = None
+            r.user_set = False
+    cas.status, cas.imported_at = "draft", None
+    refresh(db, cas)
+    return True
+
+
 def open_draft(db: Session, candidates: list[tuple[str, str]], filename: str, **source) -> CasImport:
     """The CAS draft for a PDF: the existing one for the same file, else a new one."""
     sha = source.get("file_sha256")
     if sha and (
         existing := db.scalar(select(CasImport).where(CasImport.file_sha256 == sha).order_by(CasImport.id.desc()))
     ):
+        revive(db, existing)
         return existing
     reading = best_reading(candidates)
     if reading is None:
@@ -311,7 +345,7 @@ def fund_account(db: Session, scheme: str, folio: str | None, amc: str | None) -
 
 def _validate(db: Session, cas: CasImport) -> None:
     for r in cas.rows:
-        if r.existing or r.action in ("skip", "units", "before", "switch"):
+        if r.existing or r.action in ("skip", "units", "before", "switch") or r.fund.skip or r.fund.mode == "fund":
             continue
         if r.action == "transfer" and (r.bank_account_id is None or db.get(Account, r.bank_account_id) is None):
             raise bad(f"Choose the bank account for the {r.date:%d %b %Y} row of {r.fund.scheme}.")
@@ -344,18 +378,33 @@ def do_import(db: Session, cas: CasImport) -> dict:
     accounts: dict[int, Account] = {}
     created = 0
     counts_replaced = False
+    funds_only = 0
     for f in cas.funds:
         if f.skip:
             continue
         acct = db.get(Account, f.account_id) if f.account_id else None
+        if f.mode == "txns" and (acct is None or db.get(Fund, acct.id) is None):
+            raise bad(f"“Transactions only” for {f.scheme} needs a fund you already have — pick it under “Goes to”.")
         if acct is None:
             acct = fund_account(db, f.scheme, f.folio, f.amc)
             f.account_id = acct.id
             created += 1
-        has_before = any(r.fund_id == f.id and r.action == "before" and not r.existing for r in cas.rows)
-        if has_before and already_invested(db, acct.id):
-            acct.opening_balance, acct.opening_date = 0, None  # replaced by the CAS's older purchases
-            counts_replaced = True
+        history = db.scalar(select(FundTxn.id).where(FundTxn.account_id == acct.id).limit(1)) is not None
+        if f.mode != "fund":
+            mine = [r for r in cas.rows if r.fund_id == f.id and not r.existing and r.action != "skip"]
+            has_before = any(r.action == "before" for r in mine)
+            from_start = bool(mine) and not f.opening_units  # the CAS shows the fund from its first purchase
+            if (has_before or from_start) and already_invested(db, acct.id):
+                acct.opening_balance, acct.opening_date = 0, None  # replaced by the CAS's own rows
+                counts_replaced = True
+        if f.mode == "txns":
+            accounts[f.id] = acct  # its rows only: the fund's name, units and price stay as they are
+            continue
+        if f.mode == "fund":
+            funds_only += 1
+            if not history and f.cost is not None:  # today's holding: what you paid counts as already invested
+                acct.opening_balance = f.cost
+                acct.opening_date = cas.period_to or acct.opening_date
         fund = db.get(Fund, acct.id) or Fund(account_id=acct.id, scheme=f.scheme)
         fund.scheme, fund.amc, fund.registrar = f.scheme, f.amc, f.registrar
         fund.isin = f.isin or fund.isin
@@ -370,7 +419,8 @@ def do_import(db: Session, cas: CasImport) -> dict:
         if f.nav is not None and (fund.nav_date is None or (f.nav_date and f.nav_date >= fund.nav_date)):
             fund.nav, fund.nav_date, fund.nav_source = f.nav, f.nav_date, "cas"
         db.add(fund)
-        accounts[f.id] = acct
+        if f.mode != "fund":
+            accounts[f.id] = acct  # "fund only": its rows aren't imported
     db.flush()
 
     counts: Counter = Counter()
@@ -416,7 +466,10 @@ def do_import(db: Session, cas: CasImport) -> dict:
             pair = rows_by_id.get(r.pair_row_id or -1)
             to_acct = accounts.get(pair.fund_id) if pair else None
             if to_acct is None or pair is None:
-                raise bad(f"The other side of the switch on {r.date:%d %b %Y} is missing.")
+                raise bad(
+                    f"The switch on {r.date:%d %b %Y} goes to a fund you're leaving out or importing as "
+                    "“Fund only” — import both funds' transactions, or leave this row out."
+                )
             t = _transfer(
                 db, r.date, abs(r.amount), f"Switch · {r.fund.scheme} → {pair.fund.scheme}", acct.id, to_acct.id
             )
@@ -450,7 +503,8 @@ def do_import(db: Session, cas: CasImport) -> dict:
             msg.status = "handled"  # the CAS email is dealt with
     db.commit()
     return {
-        "funds": len(accounts),
+        "funds": len(accounts) + funds_only,
+        "funds_only": funds_only,
         "funds_skipped": sum(1 for f in cas.funds if f.skip),
         "accounts_created": created,
         "opening_replaced": int(counts_replaced),

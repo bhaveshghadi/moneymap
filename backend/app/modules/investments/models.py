@@ -166,6 +166,8 @@ class CasFund(Base):
     )
     create_new: Mapped[bool] = mapped_column(Boolean, default=False)
     skip: Mapped[bool] = mapped_column(Boolean, default=False)
+    # what to import: both | fund (today's holding, no history) | txns (rows into a fund you have)
+    mode: Mapped[str] = mapped_column(String(8), default="both", server_default="both")
 
     cas: Mapped[CasImport] = relationship(back_populates="funds")
 

@@ -16,7 +16,7 @@ from ..auth.security import current_user
 from ..gmail.models import GmailAttachment
 from ..transactions.models import Transaction
 from ..transactions.service import txn_out
-from .cas_service import KIND_LABEL, already_invested, bad, bank_accounts, do_import, refresh
+from .cas_service import KIND_LABEL, already_invested, bad, bank_accounts, do_import, refresh, revive
 from .models import CasImport, Fund, Investment
 from .nav import get_status, search_schemes, update_navs
 
@@ -55,6 +55,7 @@ class CasFundOut(BaseModel):
     account_id: int | None
     account_name: str | None
     skip: bool
+    mode: Literal["both", "fund", "txns"]
     rows: int
     already_imported: int  # rows imported before (from an earlier CAS) — skipped
     replaces_opening: int | None  # a fund you added by hand: its "already invested" amount, replaced on import
@@ -112,6 +113,10 @@ class CasFundPatch(BaseModel):
     account_id: int | None = None  # None = a new investment on import
     skip: bool = False  # don't import this fund
     auto: bool = False  # import it again, into the fund suggested for it (or a new one)
+
+
+class CasFundMode(BaseModel):
+    mode: Literal["both", "fund", "txns"]
 
 
 class CasRowPatch(BaseModel):
@@ -217,11 +222,14 @@ def _cas_out(db: Session, cas: CasImport) -> CasOut:
                 account_id=f.account_id,
                 account_name=names.get(f.account_id) if f.account_id else None,
                 skip=f.skip,
+                mode=f.mode,  # type: ignore[arg-type]
                 rows=per_fund.get(f.id, 0),
                 already_imported=existing.get(f.id, 0),
                 replaces_opening=(
                     already_invested(db, f.account_id)
-                    if not f.skip and any(r.fund_id == f.id and r.action == "before" for r in cas.rows)
+                    if not f.skip
+                    and f.mode != "fund"
+                    and any(r.fund_id == f.id and r.action == "before" for r in cas.rows)
                     else None
                 ),
                 units_now=(fund.units / 1000 if (fund := db.get(Fund, f.account_id or -1)) else None),
@@ -268,7 +276,9 @@ def list_cas(db: Session = Depends(get_db)) -> list[CasSummary]:
 @router.get("/cas/{cid}", response_model=CasOut)
 def get_cas(cid: int, db: Session = Depends(get_db)) -> CasOut:
     cas = _get(db, cid)
-    if cas.status == "draft":
+    if revive(db, cas):  # its funds were deleted since it was imported
+        db.commit()
+    elif cas.status == "draft":
         refresh(db, cas)  # transactions may have changed since it was read
         db.commit()
     return _cas_out(db, cas)
@@ -289,10 +299,29 @@ def set_fund_account(cid: int, fid: int, body: CasFundPatch, db: Session = Depen
     f.skip = body.skip
     f.account_id = None if body.skip else body.account_id
     f.create_new = not body.skip and body.account_id is None and not body.auto
+    if f.mode == "txns" and f.create_new:
+        f.mode = "both"  # a new fund needs its details: "transactions only" is for one you have
     for r in cas.rows:
         if r.fund_id == fid:
             r.user_set = False  # matches depend on the account: work them out again
     refresh(db, cas)
+    db.commit()
+    return _cas_out(db, cas)
+
+
+@router.patch("/cas/{cid}/funds/{fid}/mode", response_model=CasOut)
+def set_fund_mode(cid: int, fid: int, body: CasFundMode, db: Session = Depends(get_db)) -> CasOut:
+    """Import the fund and its transactions, the fund only (today's holding), or the transactions only."""
+    cas = _draft(db, cid)
+    f = next((x for x in cas.funds if x.id == fid), None)
+    if f is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Fund not found")
+    if body.mode == "txns" and (f.skip or f.account_id is None or db.get(Fund, f.account_id) is None):
+        raise bad("“Transactions only” adds rows to a fund you already have — pick it under “Goes to” first.")
+    f.mode = body.mode
+    if f.skip:
+        f.skip = False
+        refresh(db, cas)
     db.commit()
     return _cas_out(db, cas)
 

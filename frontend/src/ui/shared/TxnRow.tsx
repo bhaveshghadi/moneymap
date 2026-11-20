@@ -1,6 +1,6 @@
 'use client';
 import type { Txn } from '../lib/types';
-import { counterparty, fmtDate, ownAccount, rs } from '../lib/format';
+import { counterparty, fmtDate, ownAccount, rs, txnTitle } from '../lib/format';
 import { Money } from '../primitives/Money';
 import { CategoryGlyph } from '../primitives/CategoryGlyph';
 
@@ -42,13 +42,13 @@ export function TxnRow({
     <button type="button" className="txn click rowbtn" onClick={onClick}>
       <TxnGlyph t={t} />
       <div className="txn-mid">
+        {/* top: what kind of spending and from which account; below: what it was */}
         <div className="mer" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {t.description}
+          {t.type === 'transfer' ? counterparty(t) : t.category ? t.category.name : <span className="badge cau">Uncategorised</span>}
+          {own && <span className="muted" style={{ fontWeight: 500 }}> · {own}</span>}
         </div>
         <div className="cat">
-          <span>{counterparty(t)}</span>
-          {own && <span>· {own}</span>}
-          {t.category ? <span>· {t.category.name}</span> : t.type !== 'transfer' && <span className="badge cau">Uncategorised</span>}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{txnTitle(t)}</span>
           {t.bill && <span className="badge coral">Bill · {t.bill.name}</span>}
           {t.tags.map((tag) => (
             <span key={tag} className="badge neutral">

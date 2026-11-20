@@ -34,7 +34,7 @@ def test_income_and_transfer(client, bank):
 
 def test_transaction_validation(client, bank):
     base = {"type": "withdrawal", "date": TODAY, "amount": 100, "description": "x", "source_id": bank["id"]}
-    assert client.post("/api/transactions", json=base).status_code == 422  # no payee
+    assert client.post("/api/transactions", json={**base, "source_id": None, "destination_name": "A"}).status_code == 422
     assert client.post("/api/transactions", json={**base, "destination_name": "A", "amount": 0}).status_code == 422
     assert client.post("/api/transactions", json={**base, "destination_name": "A", "description": "  "}).status_code == 422
     assert client.post("/api/transactions", json={**base, "destination_name": "A", "category_id": 99999}).status_code == 422
@@ -108,3 +108,23 @@ def test_delete_selected_transactions(client, bank):
 
 def test_delete_selected_needs_login(anon):
     assert anon.post("/api/transactions/delete", json={"ids": [1]}).status_code == 401
+
+
+def test_no_payee_keeps_a_hidden_one(client, bank):
+    """The page doesn't ask who was paid: the category's name stands in (never shown)."""
+    base = {"type": "withdrawal", "date": TODAY, "amount": 250_00, "description": "Veg", "source_id": bank["id"]}
+    t = client.post("/api/transactions", json={**base, "category_id": cat_id(client, "Groceries")}).json()
+    assert (t["destination"]["type"], t["destination"]["name"]) == ("expense", "Groceries")
+    t2 = client.post("/api/transactions", json=base).json()
+    assert t2["destination"]["name"] == "Spending"
+    r = client.post("/api/transactions", json={"type": "deposit", "date": TODAY, "amount": 10_00, "description": "Gift",
+                                               "destination_id": bank["id"]})  # fmt: skip
+    assert r.status_code == 201 and r.json()["source"]["name"] == "Income"
+    # editing a stand-in follows the new category
+    edit = {**base, "category_id": cat_id(client, "Food Delivery")}
+    assert client.put(f"/api/transactions/{t['id']}", json=edit).json()["destination"]["name"] == "Food Delivery"
+    # a real payee (from a statement, the Inbox or before) stays when edited without one
+    s = spend(client, bank, 45_000, payee="Swiggy", category_id=cat_id(client, "Food Delivery"))
+    body = {**base, "amount": 46_000, "category_id": cat_id(client, "Groceries")}
+    e = client.put(f"/api/transactions/{s['id']}", json=body).json()
+    assert (e["destination"]["id"], e["amount"]) == (s["destination"]["id"], 46_000)

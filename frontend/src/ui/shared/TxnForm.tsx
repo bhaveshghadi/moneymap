@@ -44,8 +44,9 @@ function initial(txn?: Txn, d: TxnDefaults = {}) {
       description: txn.description,
       sourceId: txn.type !== 'deposit' ? String(txn.source.id) : '',
       destId: txn.type !== 'withdrawal' ? String(txn.destination.id) : '',
-      sourceName: txn.type === 'deposit' ? txn.source.name : '',
-      destName: txn.type === 'withdrawal' ? txn.destination.name : '',
+      // who was paid isn't asked: the server keeps the payee a transaction already has
+      sourceName: '',
+      destName: '',
       categoryId: txn.category ? String(txn.category.id) : '',
       budgetId: txn.budget ? String(txn.budget.id) : '',
       billId: txn.bill ? String(txn.bill.id) : 'none',
@@ -92,7 +93,6 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card&type=investment&include_inactive=false');
-  const counterparties = useApi<Account[]>('/accounts?type=expense&type=revenue');
   const categories = useApi<Category[]>('/categories');
   const selectedCat = (categories.data ?? []).find((c) => String(c.id) === f.categoryId);
   const tags = useApi<Tag[]>('/tags');
@@ -104,8 +104,6 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
   const own = accounts.data ?? [];
   const keepOwn = txn ? [txn.source, txn.destination].filter((a) => ['asset', 'cash', 'credit_card', 'emi_plan', 'loan', 'investment'].includes(a.type) && !own.some((o) => o.id === a.id)) : [];
   const ownOptions = [...own, ...keepOwn];
-  const expenseNames = (counterparties.data ?? []).filter((a) => a.type === 'expense').map((a) => a.name);
-  const revenueNames = (counterparties.data ?? []).filter((a) => a.type === 'revenue').map((a) => a.name);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -127,9 +125,9 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
     };
     if (f.type === 'withdrawal') {
       body.source_id = f.sourceId ? Number(f.sourceId) : null;
-      body.destination_name = f.destName;
+      if (f.destName) body.destination_name = f.destName; // from an Inbox alert: kept, not shown
     } else if (f.type === 'deposit') {
-      body.source_name = f.sourceName;
+      if (f.sourceName) body.source_name = f.sourceName;
       body.destination_id = f.destId ? Number(f.destId) : null;
     } else {
       body.source_id = f.sourceId ? Number(f.sourceId) : null;
@@ -196,19 +194,6 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
     </div>
   );
 
-  const nameInput = (value: string, onChange: (v: string) => void, label: string, id: string, options: string[], hint: string) => (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      <input id={id} className="inp" list={`${id}-list`} value={value} onChange={(e) => onChange(e.target.value)} required placeholder={hint} />
-      <datalist id={`${id}-list`}>
-        {options.map((n) => (
-          <option key={n} value={n} />
-        ))}
-      </datalist>
-      <div className="hint">Pick an existing one or type a new name — it&apos;s created automatically.</div>
-    </div>
-  );
-
   return (
     <form onSubmit={submit} style={{ display: 'contents' }}>
       <DrawerHead title={txn ? 'Edit transaction' : 'Add transaction'} sub="Amounts are in ₹" />
@@ -243,18 +228,8 @@ function TxnFormBody({ txn, defaults }: { txn?: Txn; defaults?: TxnDefaults }) {
           </div>
         </div>
 
-        {f.type === 'withdrawal' && (
-          <>
-            {ownSelect(f.sourceId, (v) => set('sourceId', v), 'Paid from', 'tx-src')}
-            {nameInput(f.destName, (v) => set('destName', v), 'Paid to', 'tx-dst', expenseNames, 'Merchant or payee')}
-          </>
-        )}
-        {f.type === 'deposit' && (
-          <>
-            {nameInput(f.sourceName, (v) => set('sourceName', v), 'Received from', 'tx-src', revenueNames, 'Employer, client, refund…')}
-            {ownSelect(f.destId, (v) => set('destId', v), 'Into account', 'tx-dst')}
-          </>
-        )}
+        {f.type === 'withdrawal' && ownSelect(f.sourceId, (v) => set('sourceId', v), 'Paid from', 'tx-src')}
+        {f.type === 'deposit' && ownSelect(f.destId, (v) => set('destId', v), 'Into account', 'tx-dst')}
         {f.type === 'transfer' && (
           <div className="row2">
             {ownSelect(f.sourceId, (v) => set('sourceId', v), 'From account', 'tx-src', true)}

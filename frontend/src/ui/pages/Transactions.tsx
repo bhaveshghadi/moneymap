@@ -183,7 +183,6 @@ export function TransactionsPage() {
 
 
   const ownAccounts = (accounts.data ?? []).filter((a) => ['asset', 'cash', 'credit_card', 'emi_plan', 'loan'].includes(a.type));
-  const otherAccounts = (accounts.data ?? []).filter((a) => !['asset', 'cash', 'credit_card', 'emi_plan', 'loan'].includes(a.type));
   const activeFilters = Object.entries(filters).some(([k, v]) => v && k !== 'type');
   const selectedAccount = accounts.data?.find((a) => String(a.id) === filters.account);
 
@@ -245,16 +244,11 @@ export function TransactionsPage() {
         </div>
       </div>
       <div className="filters">
-        <input className="inp grow" placeholder="Search description, payee or notes…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Search" />
+        <input className="inp grow" placeholder="Search description or notes…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Search" />
         <select className="inp" aria-label="Account" value={filters.account} onChange={(e) => setFilter({ account: e.target.value })}>
           <option value="">All accounts</option>
           <optgroup label="Your accounts">
             {ownAccounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </optgroup>
-          <optgroup label="Payees & payers">
-            {otherAccounts.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </optgroup>

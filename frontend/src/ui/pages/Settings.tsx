@@ -7,6 +7,7 @@ import { SectionCard } from '../primitives/SectionCard';
 import { Icon } from '../primitives/Icon';
 import { ResetCard } from '../shared/ResetCard';
 import { GmailCard } from '../shared/GmailCard';
+import { useTheme, type ThemeChoice } from '../lib/theme';
 
 export function SettingsPage() {
   const { username } = useShell();
@@ -81,6 +82,7 @@ export function SettingsPage() {
         </SectionCard>
 
         <div className="stack">
+          <AppearanceCard />
           <SectionCard title="About" pad>
             <div className="kv"><span className="k">App</span><span className="v">MoneyMap {health.data?.version ?? '…'}</span></div>
             <div className="kv"><span className="k">Currency</span><span className="v">INR (₹)</span></div>
@@ -103,5 +105,29 @@ export function SettingsPage() {
         <ResetCard />
       </div>
     </div>
+  );
+}
+
+const THEMES: { value: ThemeChoice; label: string; icon: string }[] = [
+  { value: 'light', label: 'Light', icon: 'sun' },
+  { value: 'dark', label: 'Dark', icon: 'moon' },
+  { value: 'system', label: 'Match system', icon: 'monitor' },
+];
+
+function AppearanceCard() {
+  const [theme, setTheme] = useTheme();
+  return (
+    <SectionCard title="Appearance" pad>
+      <div className="seg" role="radiogroup" aria-label="Theme">
+        {THEMES.map((t) => (
+          <button key={t.value} type="button" role="radio" aria-checked={theme === t.value} className={theme === t.value ? 'on' : ''} onClick={() => setTheme(t.value)}>
+            <Icon name={t.icon} size={14} /> {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="hint" style={{ marginTop: 10 }}>
+        {theme === 'system' ? 'Follows your device: dark when it is in dark mode.' : 'Saved on this device only.'}
+      </div>
+    </SectionCard>
   );
 }

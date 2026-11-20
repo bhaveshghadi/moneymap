@@ -63,7 +63,9 @@ export function Sidebar() {
     <nav className="sidebar">
       <div className="sb-logo">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/assets/logo-wordmark.svg" alt="MoneyMap" style={{ height: 26 }} />
+        <img className="logo-light" src="/assets/logo-wordmark.svg" alt="MoneyMap" style={{ height: 26 }} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="logo-dark" src="/assets/logo-wordmark-dark.svg" alt="MoneyMap" style={{ height: 26 }} />
       </div>
       <div className="sb-nav">{MAIN.map(renderItem)}</div>
       <div className="sb-section">Import</div>

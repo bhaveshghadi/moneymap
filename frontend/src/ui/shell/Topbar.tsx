@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, qs } from '../lib/api';
 import type { Txn, TxnPage } from '../lib/types';
-import { counterparty, fmtDate } from '../lib/format';
+import { counterparty, fmtDate, ownAccount, txnTitle } from '../lib/format';
 import { TxnAmount } from '../shared/TxnRow';
 import { useMask } from '../contexts/MaskCtx';
 import { useShell } from '../contexts/ShellCtx';
@@ -114,10 +114,10 @@ export function Topbar() {
                   }}
                 >
                   <div className="txn-mid" style={{ minWidth: 0 }}>
-                    <div className="mer" style={{ fontSize: 13.5 }}>{r.description}</div>
+                    <div className="mer" style={{ fontSize: 13.5 }}>{txnTitle(r)}</div>
                     <div className="cat" style={{ fontSize: 12 }}>
-                      {counterparty(r)}
-                      {r.category ? ' · ' + r.category.name : ''}
+                      {r.type === 'transfer' ? counterparty(r) : r.category?.name ?? 'Uncategorised'}
+                      {ownAccount(r) ? ' · ' + ownAccount(r) : ''}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>

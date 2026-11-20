@@ -75,6 +75,9 @@ class StatementRow(Base):
         ForeignKey("account.id", ondelete="SET NULL", name="fk_statement_row_transfer_account_id_account")
     )
     leave_uncategorised: Mapped[bool] = mapped_column(Boolean, default=False)
+    # "rule for next time": on import, a rule "payee contains <rule_keyword> -> this category"
+    create_rule: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    rule_keyword: Mapped[str | None] = mapped_column(String(120))
     user_set: Mapped[bool] = mapped_column(Boolean, default=False)  # you changed it; suggestions won't overwrite
     suggestion: Mapped[str | None] = mapped_column(String(160))  # why the category was filled in
     suggestion_kind: Mapped[str | None] = mapped_column(String(16))  # history

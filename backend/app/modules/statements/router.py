@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ...config import get_settings
@@ -508,6 +508,8 @@ _CARRY = (
     "leave_uncategorised",
     "suggestion",
     "suggestion_kind",
+    "create_rule",
+    "rule_keyword",
 )
 
 
@@ -690,6 +692,8 @@ def edit_row(sid: int, rid: int, body: StatementRowPatch, db: Session = Depends(
         row.suggestion, row.suggestion_kind = None, None
     if data.get("leave_uncategorised"):
         row.category_id = None
+    if row.create_rule and not (row.rule_keyword or "").strip():
+        row.rule_keyword = row.payee[:120]  # "rule for next time": the payee unless you typed a word
     row.user_set = True
     db.commit()
     out = StatementRowOut.model_validate(row)
@@ -756,6 +760,9 @@ def do_import(sid: int, db: Session = Depends(get_db)) -> StatementImportOut:
     if pending:
         raise _bad(f"{len(pending)} row(s) still need a category or a transfer account.", "unresolved")
 
+    from ..rules.engine import active_rules, apply_plan, plan_for, probe_of
+
+    rules = active_rules(db)
     imported = 0
     for row in imp.rows:
         st = row_status(row)
@@ -817,7 +824,12 @@ def do_import(sid: int, db: Session = Depends(get_db)) -> StatementImportOut:
         t.emi_id = row.emi_id  # card EMI instalment / interest / conversion
         db.add(t)
         db.flush()
+        db.refresh(t)
         row.transaction_id = t.id
+        if rules:  # tags, bill, notes from your rules (category and payee were settled on the review page)
+            plan = plan_for(probe_of(t), rules)
+            if plan.rules:
+                apply_plan(db, t, plan, overwrite=False, skip={"category_id", "budget_id"})
         if row.loan_id and row.kind == "expense" and (loan := db.get(Loan, row.loan_id)) is not None:
             # a loan's EMI (split for interest-only loans) or a part-payment on it
             if row.loan_action == "emi":
@@ -826,10 +838,42 @@ def do_import(sid: int, db: Session = Depends(get_db)) -> StatementImportOut:
                 record_prepay(db, loan, t.date, t.amount, "reduce_tenure", existing=t)
         imported += 1
 
+    rules_created = _rules_for_next_time(db, imp)
     imp.imported_count += imported
     imp.status = "imported"
     imp.imported_at = datetime.now()
     sync_inbox_status(db, imp.gmail_message_id)
     db.commit()
     db.refresh(imp)
-    return StatementImportOut(imported=imported, statement=_detail(db, imp))
+    return StatementImportOut(imported=imported, rules_created=rules_created, statement=_detail(db, imp))
+
+
+def _rules_for_next_time(db: Session, imp: StatementImport) -> int:
+    """The rows you ticked "rule for next time": a rule "payee contains <keyword> -> category"
+    (one per keyword; none if a rule already does the same)."""
+    from ..rules.engine import Probe, active_rules, plan_for
+    from ..rules.models import Rule
+
+    made = 0
+    for row in imp.rows:
+        keyword = (row.rule_keyword or "").strip()
+        if not (row.create_rule and row.transaction_id and row.category_id and keyword):
+            continue
+        row.create_rule = False
+        typ = "withdrawal" if row.kind == "expense" else "deposit"
+        probe = Probe(type=typ, amount=abs(row.amount), description=keyword, payee=keyword, account_ids=set())
+        if plan_for(probe, active_rules(db)).category_id == row.category_id:
+            continue  # already covered
+        cat = db.get(Category, row.category_id)
+        last = db.scalar(select(func.max(Rule.position))) or 0
+        db.add(
+            Rule(
+                title=f"{keyword} → {cat.name if cat else 'category'}"[:120],
+                position=last + 1,
+                conditions=[{"type": "payee_contains", "value": keyword[:255]}, {"type": "type_is", "value": typ}],
+                actions=[{"type": "set_category", "value": row.category_id}],
+            )
+        )
+        db.flush()
+        made += 1
+    return made

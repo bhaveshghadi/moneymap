@@ -167,7 +167,8 @@ def _separate_blocks(s: CardSummary, head: list[str]) -> None:
         later = [
             d
             for line in head
-            if (m := DATE_TOKEN.fullmatch(line)) and (d := parse_date(m.group(1)))
+            if (m := DATE_TOKEN.fullmatch(line))
+            and (d := parse_date(m.group(1)))
             and s.statement_date < d <= s.statement_date + timedelta(days=60)
         ]
         if later:

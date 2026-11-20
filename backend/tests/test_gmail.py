@@ -331,7 +331,7 @@ def test_alert_email_suggestion_matches_account(client, connected, fake):
     fetched(client)
     s = client.get("/api/inbox/m4").json()["suggestion"]
     assert s == {"type": "withdrawal", "amount": 45_000, "date": "2026-11-12", "merchant": "Swiggy",
-                 "account_last4": "1234", "account_id": hdfc["id"]}
+                 "account_last4": "1234", "account_id": hdfc["id"], "category_id": None, "payee": None, "rule": None}
     assert client.get("/api/inbox/m1").json()["suggestion"] is None  # statement email: for statement import
 
 

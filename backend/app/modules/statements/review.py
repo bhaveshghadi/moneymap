@@ -123,6 +123,28 @@ def payee_key(name: str) -> str:
 # ---------------------------------------------------------------- suggestions
 
 
+def suggest_from_rules(db: Session, row: StatementRow, account: Account | None, rules: list):
+    """Dry-run your rules on a row not imported yet. A rule's new payee name is put on the row."""
+    from ..rules.engine import Probe, plan_for
+
+    probe = Probe(
+        type="withdrawal" if row.kind == "expense" else "deposit",
+        amount=abs(row.amount),
+        description=f"{row.description} {row.raw}",
+        payee=row.payee,
+        account_ids={account.id} if account is not None else set(),
+    )
+    plan = plan_for(probe, rules)
+    if not plan.rules:
+        return None, None, None
+    if plan.payee:
+        row.payee = plan.payee[:120]
+    cat = db.get(Category, plan.category_id) if plan.category_id else None
+    wanted = "expense" if row.kind == "expense" else "income"
+    cid = cat.id if cat is not None and cat.kind == wanted else None
+    return cid, plan.budget_id if row.kind == "expense" else None, f"Rule: {plan.title}"
+
+
 def suggest_from_history(db: Session, row: StatementRow) -> tuple[int | None, int | None, str | None]:
     """The category you used most recently for the same payee."""
     if row.kind == "transfer":
@@ -286,6 +308,7 @@ def _suggest(
     interest_days: dict | None = None,
     loans: list | None = None,
     investments: list | None = None,
+    rules: list | None = None,
 ) -> None:
     """Kind, category and transfer account for a row you haven't edited."""
     from ..investments.matching import best as best_investment
@@ -312,8 +335,13 @@ def _suggest(
     else:
         row.kind = "income" if row.amount > 0 else "expense"
 
-    cat, bud, why = suggest_from_history(db, row)
-    kind = "history" if why else None
+    cat, bud, why = None, None, None
+    if rules and row.kind in ("expense", "income"):  # your rules first, then your history
+        cat, bud, why = suggest_from_rules(db, row, account, rules)
+    kind = "rule" if why else None
+    if not why:
+        cat, bud, why = suggest_from_history(db, row)
+        kind = "history" if why else None
     if card and row.kind == "expense" and FEE_RE.search(row.raw):
         cat, bud, why, kind = _category_id(db, FEE_CATEGORY), None, "Card fee or interest", "card"
     elif card and row.kind == "income" and not cat:
@@ -352,6 +380,9 @@ def refresh(db: Session, imp: StatementImport) -> None:
     interest_days: dict = {}
     loans = []
     investments: list = []
+    from ..rules.engine import active_rules
+
+    rules = active_rules(db)
     if account is not None and not on_card:
         from ..investments.models import Investment
 
@@ -364,7 +395,7 @@ def refresh(db: Session, imp: StatementImport) -> None:
         if row.transaction_id:  # already imported
             continue
         if not row.user_set:
-            _suggest(db, account, row, plans, interest_days, loans, investments)
+            _suggest(db, account, row, plans, interest_days, loans, investments, rules)
             row.link_txn_id = None
         row.duplicate_of = None
         # a conversion already recorded when the EMI was added on the card page

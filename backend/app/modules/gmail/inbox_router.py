@@ -54,6 +54,22 @@ def suggestion_for(db: Session, m: GmailMessage) -> AlertSuggestionOut | None:
             if (a.account_number or "").replace(" ", "").endswith(s.account_last4)
         ]
         account_id = matches[0] if len(matches) == 1 else None
+    from ..categories.models import Category
+    from ..rules.engine import Probe, active_rules, plan_for
+
+    merchant = s.merchant or ""
+    plan = plan_for(
+        Probe(
+            type=s.type,
+            amount=s.amount,
+            description=f"{merchant} {m.subject or ''}",
+            payee=merchant,
+            account_ids={account_id} if account_id else set(),
+        ),
+        active_rules(db),
+    )
+    cat = db.get(Category, plan.category_id) if plan.category_id else None
+    wanted = "expense" if s.type == "withdrawal" else "income"
     return AlertSuggestionOut(
         type=s.type,
         amount=s.amount,
@@ -61,6 +77,9 @@ def suggestion_for(db: Session, m: GmailMessage) -> AlertSuggestionOut | None:
         merchant=s.merchant,
         account_last4=s.account_last4,
         account_id=account_id,
+        category_id=cat.id if cat is not None and cat.kind == wanted else None,
+        payee=plan.payee,
+        rule=plan.title,
     )
 
 

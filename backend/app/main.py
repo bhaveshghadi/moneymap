@@ -20,6 +20,7 @@ from .modules.investments.fund_router import router as funds_router
 from .modules.investments.nav import start_daily_updates
 from .modules.investments.router import router as investments_router
 from .modules.loans.router import router as loans_router
+from .modules.loans.statement_router import router as loan_statement_router
 from .modules.overview.router import router as overview_router
 from .modules.piggybanks.router import router as piggybanks_router
 from .modules.reset.router import router as reset_router
@@ -61,6 +62,7 @@ for r in (
     emergency_router,
     cards_router,
     emi_router,
+    loan_statement_router,
     loans_router,
     funds_router,  # before investments_router: /investments/cas isn't an account id
     investments_router,

@@ -106,11 +106,13 @@ def record_prepay(
     from_account: Account | None = None,
     existing: Transaction | None = None,
     fee: int | None = None,
+    payment: bool = True,
 ) -> LoanEvent:
     """A part-payment: what's left drops by `amount`; then either the EMI stays and the
     loan ends sooner (reduce_tenure) or the end date stays and the EMI drops (reduce_emi).
     whole_emi loans count it as spending ("Loan / EMI"); interest_only loans as a
-    transfer bank -> loan. `existing`: an expense that already is this payment."""
+    transfer bank -> loan. `existing`: an expense that already is this payment.
+    `payment=False`: only the change to the loan (a part-payment from before you tracked it)."""
     who = loan.lender or loan.account.name
     if existing is not None:
         if existing.type != TransactionType.withdrawal.value or existing.source.type not in BANK_TYPES:
@@ -126,6 +128,8 @@ def record_prepay(
             t.category_id = category_id(db, EMI_CATEGORY)
         t.loan_id, t.loan_part, t.loan_n = loan.id, "prepay", None
         amount, on, created = t.amount, t.date, False
+    elif not payment:
+        t, created = None, False
     else:
         if from_account is None or from_account.type not in BANK_TYPES:
             raise _bad("Choose the bank or cash account the part-payment was paid from.")
@@ -145,9 +149,9 @@ def record_prepay(
             }
         t = _new_txn(db, body, loan, "prepay")
         created = True
-    ev = LoanEvent(kind="prepay", date=on, mode=mode, amount=amount, txn_id=t.id, txn_created=created)
-    if fee:
-        src = from_account or t.source
+    ev = LoanEvent(kind="prepay", date=on, mode=mode, amount=amount, txn_id=t.id if t else None, txn_created=created)
+    if fee and (from_account or t):
+        src = from_account or t.source  # type: ignore[union-attr]
         f = _new_txn(
             db,
             {

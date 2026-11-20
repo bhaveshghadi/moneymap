@@ -258,6 +258,11 @@ function EmailBody({ id }: { id: string }) {
         router.push(`/investments/cas/${e.detail.cas_id}`);
         return;
       }
+      if (code === 'loan_statement' && e instanceof ApiError) {
+        close(); // a lender's loan statement: read in Loans
+        router.push(`/loans?attachment=${attachmentId}`);
+        return;
+      }
       if (code === 'password_required' || code === 'wrong_password') {
         setNeedPassword(true);
         if (code === 'wrong_password' || password) setImportError((e as Error).message);

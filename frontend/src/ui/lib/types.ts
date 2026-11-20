@@ -874,3 +874,50 @@ export interface RuleSuggestion {
   count: number;
   total: number;
 }
+
+// ---------- loan statements (F14 phase 3)
+
+export interface LoanStatementField {
+  value: string | number | null;
+  source: 'statement' | 'worked_out';
+}
+
+export interface LoanStatementEvent {
+  kind: 'prepay' | 'rate';
+  date: string;
+  amount: number | null;
+  rate: number | null;
+  mode: 'reduce_tenure' | 'reduce_emi';
+  source: 'statement' | 'schedule';
+  text: string | null;
+  already_recorded: boolean;
+  transaction_id: number | null;
+  transaction: string | null;
+  date_unknown: boolean;
+}
+
+export interface LoanStatementDiff {
+  field: string;
+  label: string;
+  kind: 'money' | 'date' | 'rate' | 'count' | 'text' | 'kind' | 'first_interest' | 'method';
+  current: string | number | null; // money in paise, dates ISO
+  statement: string | number | null;
+  patch: Record<string, unknown> | null;
+  note: string | null;
+}
+
+export interface LoanStatementResult {
+  filename: string;
+  file_ref: string | null;
+  attachment_id: number | null;
+  fields: Partial<Record<
+    | 'loan_number' | 'lender' | 'kind' | 'method' | 'principal' | 'rate' | 'rate_now' | 'tenure' | 'emi'
+    | 'first_emi_date' | 'disbursed_date' | 'first_interest' | 'last_emi_date' | 'outstanding' | 'emis_paid'
+    | 'emis_left' | 'statement_date',
+    LoanStatementField
+  >>;
+  schedule_rows: number;
+  check: { rows: number; max_diff: number; matches: boolean } | null;
+  events: LoanStatementEvent[];
+  match: { account_id: number; name: string; differences: LoanStatementDiff[] } | null;
+}

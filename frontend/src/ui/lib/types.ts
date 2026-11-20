@@ -733,6 +733,8 @@ export interface NavStatus {
 
 export type CasAction = 'link' | 'convert' | 'transfer' | 'switch' | 'before' | 'units' | 'skip';
 
+export type CasImportMode = 'both' | 'fund' | 'txns';
+
 export interface CasFund {
   id: number;
   amc: string | null;
@@ -748,6 +750,7 @@ export interface CasFund {
   account_id: number | null;
   account_name: string | null;
   skip: boolean;
+  mode: CasImportMode; // both | fund (today's holding, no history) | txns (rows into a fund you have)
   rows: number;
   already_imported: number; // rows imported from an earlier CAS (skipped)
   replaces_opening: number | null; // joins a fund added by hand: its "already invested", replaced on import

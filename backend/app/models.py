@@ -12,5 +12,6 @@ from .modules.gmail.models import GmailAccount, GmailAttachment, GmailMessage, G
 from .modules.investments.models import CasFund, CasImport, CasRow, Fund, FundTxn, Investment  # noqa: F401
 from .modules.loans.models import Loan, LoanEvent  # noqa: F401
 from .modules.piggybanks.models import PiggyBank, PiggyEvent  # noqa: F401
+from .modules.rules.models import Rule  # noqa: F401
 from .modules.statements.models import StatementImport, StatementRow  # noqa: F401
 from .modules.transactions.models import Transaction, TransactionType, transaction_tag  # noqa: F401

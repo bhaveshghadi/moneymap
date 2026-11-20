@@ -102,6 +102,9 @@ class AlertSuggestionOut(BaseModel):
     merchant: str | None
     account_last4: str | None
     account_id: int | None  # your bank/cash account whose number ends with account_last4
+    category_id: int | None = None  # from your rules
+    payee: str | None = None  # the merchant, renamed by a rule
+    rule: str | None = None  # the rule(s) that matched
 
 
 class InboxDetail(InboxItem):

@@ -44,6 +44,8 @@ class StatementRowOut(ORM):
     budget_id: int | None
     transfer_account_id: int | None
     leave_uncategorised: bool
+    create_rule: bool = False  # "rule for next time" (made on import)
+    rule_keyword: str | None = None
     user_set: bool
     suggestion: str | None
     suggestion_kind: str | None
@@ -137,8 +139,11 @@ class StatementRowPatch(BaseModel):
     leave_uncategorised: bool | None = None
     link_txn_id: int | None = None  # only null: import the payment row as a new transfer instead
     loan_id: int | None = None  # only null: import it as a plain expense, not as the loan's EMI / part-payment
+    create_rule: bool | None = None  # make a rule "payee contains <rule_keyword> -> this category" on import
+    rule_keyword: str | None = Field(default=None, max_length=120)
 
 
 class StatementImportOut(BaseModel):
     imported: int
+    rules_created: int = 0
     statement: StatementDetail

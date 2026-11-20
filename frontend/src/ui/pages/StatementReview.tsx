@@ -149,13 +149,13 @@ export function StatementReviewPage({ id }: { id: number }) {
     setBusy(true);
     setMsg(null);
     try {
-      const res = await api<{ imported: number; statement: StatementDetail }>(`/statements/${id}/import`, { method: 'POST' });
+      const res = await api<{ imported: number; rules_created: number; statement: StatementDetail }>(`/statements/${id}/import`, { method: 'POST' });
       setSt(res.statement);
       setFilter('all');
       setMsg({
         ok: true,
         link: true,
-        text: `Imported ${res.imported} transaction${res.imported === 1 ? '' : 's'}.`,
+        text: `Imported ${res.imported} transaction${res.imported === 1 ? '' : 's'}${res.rules_created ? ` and made ${res.rules_created} rule${res.rules_created === 1 ? '' : 's'} for next time` : ''}.`,
       });
       bump();
     } catch (e) {
@@ -623,6 +623,26 @@ function Row({
             <option value="__none">— Leave uncategorised —</option>
           </select>
         )}
+        {!locked && r.user_set && r.kind !== 'transfer' && r.category_id !== null && r.suggestion_kind !== 'rule' && (
+          <div className="rule-next">
+            <label>
+              <input type="checkbox" checked={!!r.create_rule} onChange={(e) => onPatch({ create_rule: e.target.checked })} />
+              Rule for next time
+            </label>
+            {r.create_rule && (
+              <span>
+                payee contains{' '}
+                <input
+                  className="inp"
+                  key={r.rule_keyword ?? r.payee}
+                  defaultValue={r.rule_keyword ?? r.payee}
+                  aria-label="Rule word"
+                  onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== r.rule_keyword && onPatch({ rule_keyword: e.target.value.trim() })}
+                />
+              </span>
+            )}
+          </div>
+        )}
         {!locked && similar > 0 && (
           <div style={{ marginTop: 6 }}>
             <Button
@@ -647,7 +667,7 @@ function Row({
         )}
         {r.suggestion && r.status !== 'imported' && (
           <div className="muted" style={{ fontSize: 11.5, marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Icon name="history" size={11} /> {r.suggestion}
+            <Icon name={r.suggestion_kind === 'rule' ? 'zap' : 'history'} size={11} /> {r.suggestion}
           </div>
         )}
       </td>

@@ -516,6 +516,9 @@ export interface AlertSuggestion {
   merchant: string | null;
   account_last4: string | null;
   account_id: number | null;
+  category_id: number | null; // from your rules
+  payee: string | null; // the merchant, renamed by a rule
+  rule: string | null; // the rule(s) that matched
 }
 
 export interface InboxDetail extends InboxItem {
@@ -553,7 +556,9 @@ export interface StatementRow {
   leave_uncategorised: boolean;
   user_set: boolean;
   suggestion: string | null;
-  suggestion_kind: 'history' | 'card' | 'link' | 'emi' | 'loan' | 'investment' | null;
+  suggestion_kind: 'history' | 'rule' | 'card' | 'link' | 'emi' | 'loan' | 'investment' | null;
+  create_rule?: boolean; // "rule for next time", made on import
+  rule_keyword?: string | null;
   duplicate_of: number | null;
   duplicate: Txn | null;
   link_txn_id: number | null; // card payment: this bank-side expense becomes the transfer on import
@@ -829,4 +834,43 @@ export interface InvestmentLinkable {
   category: string | null;
   suggested: boolean;
   why: string | null;
+}
+
+// ---------- rules (F10)
+
+export type RuleConditionType =
+  | 'description_contains' | 'description_starts' | 'description_is' | 'payee_contains'
+  | 'amount_is' | 'amount_more' | 'amount_less' | 'type_is' | 'account_is' | 'no_category' | 'has_tag';
+export type RuleActionType =
+  | 'set_category' | 'set_budget' | 'set_bill' | 'add_tag' | 'remove_tag' | 'set_payee' | 'set_description' | 'add_note';
+
+export interface RuleItem<T extends string = string> {
+  type: T;
+  value?: string | number | null;
+}
+
+export interface Rule {
+  id: number;
+  title: string;
+  position: number;
+  active: boolean;
+  match_all: boolean;
+  stop: boolean;
+  conditions: RuleItem<RuleConditionType>[];
+  actions: RuleItem<RuleActionType>[];
+}
+
+export interface RuleTestResult {
+  matched: number;
+  would_change: number;
+  items: { transaction: Txn; changes: string[] }[];
+}
+
+export interface RuleSuggestion {
+  payee: string;
+  type: 'withdrawal' | 'deposit';
+  category_id: number;
+  category: string;
+  count: number;
+  total: number;
 }

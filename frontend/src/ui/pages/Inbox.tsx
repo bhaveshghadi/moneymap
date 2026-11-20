@@ -290,7 +290,7 @@ function EmailBody({ id }: { id: string }) {
     const s = useSuggestion ? m.suggestion : null;
     let defaults: TxnDefaults;
     if (s) {
-      const name = s.merchant ?? senderName(m.from_addr);
+      const name = s.payee ?? s.merchant ?? senderName(m.from_addr);
       defaults = {
         type: s.type,
         date: s.date,
@@ -299,6 +299,7 @@ function EmailBody({ id }: { id: string }) {
         ...(s.type === 'withdrawal'
           ? { source_id: s.account_id ?? undefined, destination_name: name }
           : { source_name: name, destination_id: s.account_id ?? undefined }),
+        ...(s.category_id ? { category_id: s.category_id } : {}),
         gmail_message_id: m.id,
         gmail_subject: m.subject ?? '',
       };

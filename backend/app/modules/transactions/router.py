@@ -8,6 +8,7 @@ from ...db import get_db
 from ..accounts.models import Account
 from ..auth.security import current_user
 from ..categories.models import Category, Tag
+from ..rules.engine import run_on_new
 from .models import Transaction, TransactionType
 from .schemas import BulkDeleteIn, BulkDeleteOut, TransactionIn, TransactionOut, TransactionPage
 from .service import apply_body, reopen_statements, statements_of, sync_inbox_status, txn_out
@@ -144,6 +145,9 @@ def create_transaction(body: TransactionIn, db: Session = Depends(get_db)) -> Tr
     t = Transaction()
     apply_body(db, t, body, is_new=True)
     db.add(t)
+    db.flush()
+    db.refresh(t)
+    run_on_new(db, t)  # rules fill only what you left empty
     sync_inbox_status(db, t.gmail_message_id)
     db.commit()
     db.refresh(t)

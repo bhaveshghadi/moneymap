@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { api, qs } from '../lib/api';
 import { useApi, useShell } from '../contexts/ShellCtx';
-import type { BudgetMode, Budget, BudgetMonth } from '../lib/types';
+import type { BudgetMode, Budget, BudgetMonth, Category } from '../lib/types';
 import { currentMonth, monthLabel, monthRange, paiseToInput, rs, shiftMonth, toPaise } from '../lib/format';
 import { Button } from '../primitives/Button';
 import { Money } from '../primitives/Money';
@@ -27,6 +27,8 @@ const MODE_LABEL: Record<BudgetMode, string> = {
 export function BudgetsPage() {
   const [month, setMonth] = useState(currentMonth());
   const { data, error, reload } = useApi<BudgetMonth>(`/budgets?month=${month}`);
+  const categories = useApi<Category[]>('/categories');
+  const catName = new Map((categories.data ?? []).map((c) => [c.id, c.name]));
   const [editing, setEditing] = useState<{ budget?: Budget } | null>(null);
   const range = monthRange(month);
   const active = (data?.budgets ?? []).filter((b) => b.active);
@@ -82,7 +84,7 @@ export function BudgetsPage() {
 
           <SectionCard title={`Budgets · ${monthLabel(month)}`}>
             {active.map((b) => (
-              <BudgetRow key={b.id} b={b} range={range} onClick={() => setEditing({ budget: b })} />
+              <BudgetRow key={b.id} b={b} range={range} catName={catName} onClick={() => setEditing({ budget: b })} />
             ))}
             <Link
               href={`/transactions${qs({ type: 'withdrawal', no_budget: 1, from: range.from, to: range.to })}`}
@@ -102,7 +104,7 @@ export function BudgetsPage() {
             <div style={{ marginTop: 16 }}>
               <SectionCard title="Inactive">
                 {inactive.map((b) => (
-                  <BudgetRow key={b.id} b={b} range={range} onClick={() => setEditing({ budget: b })} />
+                  <BudgetRow key={b.id} b={b} range={range} catName={catName} onClick={() => setEditing({ budget: b })} />
                 ))}
               </SectionCard>
             </div>
@@ -115,7 +117,7 @@ export function BudgetsPage() {
   );
 }
 
-function BudgetRow({ b, range, onClick }: { b: Budget; range: { from: string; to: string }; onClick: () => void }) {
+function BudgetRow({ b, range, catName, onClick }: { b: Budget; range: { from: string; to: string }; catName: Map<number, string>; onClick: () => void }) {
   const over = b.left !== null && b.left < 0;
   return (
     <div className="catrow" role="button" tabIndex={0} onClick={onClick} onKeyDown={(e) => e.key === 'Enter' && onClick()} style={{ opacity: b.active ? 1 : 0.6 }}>
@@ -142,6 +144,11 @@ function BudgetRow({ b, range, onClick }: { b: Budget; range: { from: string; to
           </Link>
         </span>
       </div>
+      {b.category_ids.length > 0 && (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+          Counts {b.category_ids.map((id) => catName.get(id) ?? '…').join(', ')}
+        </div>
+      )}
       {b.limit !== null ? (
         <>
           <Progress value={b.spent} max={b.limit} />
@@ -176,6 +183,13 @@ function BudgetFormBody({ budget, month }: { budget?: Budget; month: string }) {
   const [amountText, setAmountText] = useState(budget && budget.amount ? paiseToInput(budget.amount) : '');
   const [limit, setLimit] = useState(budget?.limit != null ? paiseToInput(budget.limit) : '');
   const [active, setActive] = useState(budget?.active ?? true);
+  const [cats, setCats] = useState<number[]>(budget?.category_ids ?? []);
+  const categories = useApi<Category[]>('/categories');
+  const all = useApi<BudgetMonth>(`/budgets?month=${month}`);
+  // a category counts in one budget only
+  const elsewhere = new Map(
+    (all.data?.budgets ?? []).filter((x) => x.id !== budget?.id).flatMap((x) => x.category_ids.map((c) => [c, x.name] as const)),
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -188,7 +202,7 @@ function BudgetFormBody({ budget, month }: { budget?: Budget; month: string }) {
     if (mode !== 'manual' && auto === 0) return setError('Enter the amount per month');
     setSaving(true);
     try {
-      const body = { name, mode, amount: auto, active };
+      const body = { name, mode, amount: auto, active, category_ids: cats };
       let saved: Budget;
       if (budget) saved = await api<Budget>(`/budgets/${budget.id}?month=${month}`, { method: 'PATCH', body });
       else saved = await api<Budget>(`/budgets?month=${month}`, { method: 'POST', body });
@@ -265,6 +279,29 @@ function BudgetFormBody({ budget, month }: { budget?: Budget; month: string }) {
             <input id="bu-auto" className="inp" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} placeholder="0.00" />
           </div>
         )}
+        <div className="field">
+          <label>Categories it counts</label>
+          <div className="budget-cats">
+            {(categories.data ?? [])
+              .filter((c) => c.kind === 'expense')
+              .map((c) => {
+                const other = elsewhere.get(c.id);
+                return (
+                  <label key={c.id} className={`chip ${cats.includes(c.id) ? 'on' : ''}`} style={other ? { opacity: 0.45 } : undefined} title={other ? `Counts in “${other}”` : undefined}>
+                    <input
+                      type="checkbox"
+                      hidden
+                      checked={cats.includes(c.id)}
+                      disabled={!!other}
+                      onChange={(e) => setCats((xs) => (e.target.checked ? [...xs, c.id] : xs.filter((x) => x !== c.id)))}
+                    />
+                    {c.name}
+                  </label>
+                );
+              })}
+          </div>
+          <div className="hint">Expenses in these categories count here by themselves — no need to pick the budget on each one. Optional.</div>
+        </div>
         {(mode === 'manual' || budget) && (
           <div className="field">
             <label htmlFor="bu-limit">Amount for {monthLabel(month)} (₹)</label>

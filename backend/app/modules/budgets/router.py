@@ -7,7 +7,7 @@ from ...db import get_db
 from ..auth.security import current_user
 from .models import Budget, BudgetLimit
 from .schemas import BudgetIn, BudgetMonth, BudgetOut, BudgetPatch, LimitIn
-from .service import budget_out, budgets_for_month, parse_month, reset_auto_limits
+from .service import budget_out, budgets_for_month, parse_month, reset_auto_limits, set_categories
 
 router = APIRouter(prefix="/budgets", tags=["budgets"], dependencies=[Depends(current_user)])
 
@@ -39,6 +39,9 @@ def create_budget(body: BudgetIn, month: str | None = None, db: Session = Depend
     b = Budget(name=body.name, active=body.active, mode=body.mode, amount=body.amount)
     db.add(b)
     _commit(db)
+    if body.category_ids:
+        set_categories(db, b, body.category_ids)
+        db.commit()
     db.refresh(b)
     out = budget_out(db, b, m, label)
     db.commit()
@@ -50,6 +53,8 @@ def update_budget(bid: int, body: BudgetPatch, month: str | None = None, db: Ses
     m, label = parse_month(month)
     b = _get(db, bid)
     data = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "category_ids" in data:
+        set_categories(db, b, data.pop("category_ids"))
     mode_changed = any(k in data and data[k] != getattr(b, k) for k in ("mode", "amount"))
     for k, v in data.items():
         setattr(b, k, v.strip() if k == "name" else v)

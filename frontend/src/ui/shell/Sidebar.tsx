@@ -19,6 +19,7 @@ const MAIN: NavItem[] = [
   { href: '/credit-cards', label: 'Credit cards', icon: 'credit-card' },
   { href: '/loans', label: 'Loans', icon: 'hand-coins' },
   { href: '/investments', label: 'Investments', icon: 'trending-up' },
+  { href: '/savings-plan', label: 'Savings plan', icon: 'chart-pie' },
   { href: '/budgets', label: 'Budgets', icon: 'gauge' },
   { href: '/bills', label: 'Bills', icon: 'receipt-text' },
   { href: '/piggy-banks', label: 'Piggy banks', icon: 'piggy-bank' },

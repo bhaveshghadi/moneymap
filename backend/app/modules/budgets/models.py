@@ -23,6 +23,20 @@ class Budget(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class BudgetCategory(Base):
+    """A category a budget counts by itself: its expenses go to this budget unless you put
+    them in another one by hand. A category belongs to at most one budget."""
+
+    __tablename__ = "budget_category"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    budget_id: Mapped[int] = mapped_column(
+        ForeignKey("budget.id", ondelete="CASCADE", name="fk_budget_category_budget_id_budget"), index=True
+    )
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("category.id", ondelete="CASCADE", name="fk_budget_category_category_id_category"), unique=True
+    )
+
+
 class BudgetLimit(Base):
     """The amount available in one budget for one month."""
 

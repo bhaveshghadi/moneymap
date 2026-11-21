@@ -3,12 +3,12 @@
 from datetime import date
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ...core.dates import add_months, month_bounds
 from ..transactions.models import Transaction, TransactionType
-from .models import Budget, BudgetLimit, BudgetMode
+from .models import Budget, BudgetCategory, BudgetLimit, BudgetMode
 from .schemas import BudgetMonth, BudgetOut
 
 ROLLOVER_MAX_MONTHS = 240  # how far back a rollover chain is followed
@@ -23,12 +23,24 @@ def parse_month(month: str | None) -> tuple[date, str]:
     return start, label
 
 
+def categories_of(db: Session, budget_id: int) -> list[int]:
+    return list(db.scalars(select(BudgetCategory.category_id).where(BudgetCategory.budget_id == budget_id)))
+
+
+def in_budget(budget_id: int, category_ids: list[int]):
+    """Put in this budget by hand, or (no budget of its own) in one of the budget's categories."""
+    own = Transaction.budget_id == budget_id
+    if not category_ids:
+        return own
+    return or_(own, and_(Transaction.budget_id.is_(None), Transaction.category_id.in_(category_ids)))
+
+
 def spent_in(db: Session, budget_id: int, m: date) -> int:
     """Expenses in this budget during the month starting at `m`."""
     return int(
         db.scalar(
             select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-                Transaction.budget_id == budget_id,
+                in_budget(budget_id, categories_of(db, budget_id)),
                 Transaction.type == TransactionType.withdrawal.value,
                 Transaction.date >= m,
                 Transaction.date < add_months(m, 1, 1),
@@ -82,6 +94,7 @@ def budget_out(db: Session, b: Budget, m: date, label: str) -> BudgetOut:
     lim = limit_for(db, b, m)
     spent = spent_in(db, b.id, m)
     out = BudgetOut.model_validate(b)
+    out.category_ids = categories_of(db, b.id)
     out.month = label
     out.limit = lim.amount if lim else None
     out.limit_is_auto = bool(lim and lim.auto_generated)
@@ -98,10 +111,14 @@ def budgets_for_month(db: Session, month: str | None, active_only: bool = False)
         q = q.where(Budget.active.is_(True))
     items = [budget_out(db, b, m, label) for b in db.scalars(q)]
     db.commit()
+    counted = list(db.scalars(select(BudgetCategory.category_id)))
+    no_budget = Transaction.budget_id.is_(None)
+    if counted:
+        no_budget = and_(no_budget, or_(Transaction.category_id.is_(None), Transaction.category_id.not_in(counted)))
     unbudgeted = db.scalar(
         select(func.coalesce(func.sum(Transaction.amount), 0)).where(
             Transaction.type == TransactionType.withdrawal.value,
-            Transaction.budget_id.is_(None),
+            no_budget,
             Transaction.date >= m,
             Transaction.date < add_months(m, 1, 1),
         )
@@ -113,3 +130,29 @@ def budgets_for_month(db: Session, month: str | None, active_only: bool = False)
         spent=sum(b.spent for b in items),
         unbudgeted_spent=int(unbudgeted or 0),
     )
+
+
+def set_categories(db: Session, b: Budget, category_ids: list[int]) -> None:
+    """The categories this budget counts by itself (expense categories, each in one budget only)."""
+    from ..categories.models import Category
+
+    ids = list(dict.fromkeys(category_ids))
+    for cid in ids:
+        c = db.get(Category, cid)
+        if c is None or c.kind != "expense":
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Pick expense categories only.")
+        other = db.scalar(select(BudgetCategory).where(BudgetCategory.category_id == cid))
+        if other is not None and other.budget_id != b.id:
+            owner = db.get(Budget, other.budget_id)
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"“{c.name}” already counts in the budget “{owner.name if owner else '?'}”.",
+            )
+    for bc in db.scalars(select(BudgetCategory).where(BudgetCategory.budget_id == b.id)):
+        if bc.category_id not in ids:
+            db.delete(bc)
+    have = set(categories_of(db, b.id))
+    for cid in ids:
+        if cid not in have:
+            db.add(BudgetCategory(budget_id=b.id, category_id=cid))
+    db.flush()

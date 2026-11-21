@@ -1003,3 +1003,26 @@ export interface BudgetProposals {
   items: BudgetProposal[];
   taken: BudgetProposal[];
 }
+
+// ---------------------------------------------------------------- start-up guide (F20)
+
+export interface GuideStep {
+  key: string;
+  title: string;
+  why: string;
+  href: string;
+  optional: boolean;
+  manual: boolean;
+  detail: string;
+  done: boolean;
+  skipped: boolean;
+}
+
+export interface Guide {
+  steps: GuideStep[];
+  done: number;
+  total: number;
+  hidden: boolean;
+  finished: boolean;
+  show_first: boolean;
+}

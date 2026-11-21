@@ -1,9 +1,10 @@
 'use client';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useApi } from '../contexts/ShellCtx';
 import { useTxn } from '../contexts/TxnCtx';
-import type { Overview, SavingsPlan } from '../lib/types';
+import type { Guide, Overview, SavingsPlan } from '../lib/types';
 import { ACCOUNT_TYPE_ICON, ACCOUNT_TYPE_LABEL, currentMonth, dueText, fmtDate, monthLabel, monthRange, rs, shiftMonth } from '../lib/format';
 import { qs } from '../lib/api';
 import { Money } from '../primitives/Money';
@@ -42,6 +43,19 @@ export function OverviewPage() {
   const [month, setMonth] = useState(currentMonth());
   const { data, error, loading, reload } = useApi<Overview>(`/overview?month=${month}`);
   const plan = useApi<SavingsPlan>(`/savings-plan?month=${month}`);
+  const guide = useApi<Guide>('/guide');
+  const router = useRouter();
+  // first sign-in: open the start-up guide (once per browser session, until it's hidden or finished)
+  useEffect(() => {
+    if (!guide.data?.show_first) return;
+    try {
+      if (sessionStorage.getItem('mm-guide-opened')) return;
+      sessionStorage.setItem('mm-guide-opened', '1');
+    } catch {
+      return;
+    }
+    router.replace('/guide');
+  }, [guide.data, router]);
   const { openTxn, newTxn } = useTxn();
   const range = monthRange(month);
   const inMonth = { from: range.from, to: range.to };

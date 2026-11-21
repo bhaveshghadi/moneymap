@@ -32,6 +32,7 @@ const IMPORT: NavItem[] = [
 ];
 
 const TOOLS: NavItem[] = [
+  { href: '/guide', label: 'Guide', icon: 'compass' },
   { href: '/categories', label: 'Categories & tags', icon: 'tags' },
   { href: '/rules', label: 'Rules', icon: 'zap' },
   { href: '/settings', label: 'Settings', icon: 'settings' },

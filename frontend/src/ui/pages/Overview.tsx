@@ -3,12 +3,13 @@ import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useApi } from '../contexts/ShellCtx';
 import { useTxn } from '../contexts/TxnCtx';
-import type { Overview } from '../lib/types';
+import type { Overview, SavingsPlan } from '../lib/types';
 import { ACCOUNT_TYPE_ICON, ACCOUNT_TYPE_LABEL, currentMonth, dueText, fmtDate, monthLabel, monthRange, rs, shiftMonth } from '../lib/format';
 import { qs } from '../lib/api';
 import { Money } from '../primitives/Money';
 import { StatCard } from '../primitives/StatCard';
 import { SectionCard } from '../primitives/SectionCard';
+import { RULE_LABEL } from './SavingsPlan';
 import { Skeleton } from '../primitives/Skeleton';
 import { EmptyState } from '../primitives/EmptyState';
 import { ErrorState } from '../primitives/ErrorState';
@@ -40,6 +41,7 @@ function Row({ href, glyph, title, sub, right }: { href: string; glyph: ReactNod
 export function OverviewPage() {
   const [month, setMonth] = useState(currentMonth());
   const { data, error, loading, reload } = useApi<Overview>(`/overview?month=${month}`);
+  const plan = useApi<SavingsPlan>(`/savings-plan?month=${month}`);
   const { openTxn, newTxn } = useTxn();
   const range = monthRange(month);
   const inMonth = { from: range.from, to: range.to };
@@ -212,6 +214,8 @@ export function OverviewPage() {
         </SectionCard>
       </div>
 
+      {plan.data && plan.data.income_used > 0 && <SavingsCard p={plan.data} />}
+
       {data.emergency && (
         <div style={{ marginBottom: 16 }}>
           <SectionCard title="Emergency fund" action={{ label: 'Open', href: '/piggy-banks' }}>
@@ -378,6 +382,46 @@ export function OverviewPage() {
         ) : (
           data.recent.map((t) => <TxnRow key={t.id} t={t} onClick={() => openTxn(t)} />)
         )}
+      </SectionCard>
+    </div>
+  );
+}
+
+/** Needs / wants / savings against the rule, and the most important suggestion. */
+function SavingsCard({ p }: { p: SavingsPlan }) {
+  const combined = p.settings.needs === null;
+  const rows = combined
+    ? [{ label: 'Spending', s: p.spending, over: true }, { label: 'Savings', s: p.savings, over: false }]
+    : [
+        { label: 'Needs', s: p.needs, over: true },
+        { label: 'Wants', s: p.wants, over: true },
+        { label: 'Savings', s: p.savings, over: false },
+      ];
+  const top = p.suggestions[0];
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <SectionCard title={`Savings plan · ${RULE_LABEL[p.settings.rule]}`} action={{ label: 'Open', href: '/savings-plan' }}>
+        <div className="catrow" style={{ display: 'block' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))`, gap: 12 }}>
+            {rows.map(({ label, s, over }) => {
+              const bad = s.diff !== null && (over ? s.diff > 0 : s.diff < 0);
+              return (
+                <div key={label}>
+                  <div className="muted" style={{ fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+                  <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 20, color: bad ? 'var(--red-600)' : 'var(--fg-1)' }}>
+                    {s.pct !== null ? `${Math.round(s.pct)}%` : '—'}
+                  </div>
+                  {s.target_pct !== null && <div className="muted" style={{ fontSize: 12 }}>target {s.target_pct}%</div>}
+                </div>
+              );
+            })}
+          </div>
+          {top && (
+            <div style={{ fontSize: 13, marginTop: 10, color: top.tone === 'warn' ? 'var(--amber-700)' : top.tone === 'good' ? 'var(--mint-700)' : 'var(--fg-2)' }}>
+              <Icon name={top.tone === 'warn' ? 'triangle-alert' : top.tone === 'good' ? 'circle-check' : 'info'} size={14} style={{ verticalAlign: '-2px' }} /> {top.title}
+            </div>
+          )}
+        </div>
       </SectionCard>
     </div>
   );

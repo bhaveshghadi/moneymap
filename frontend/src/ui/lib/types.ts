@@ -59,6 +59,7 @@ export interface Budget {
   active: boolean;
   mode: BudgetMode;
   amount: number; // per month (fixed / rollover)
+  category_ids: number[]; // expenses in these categories count here by themselves
   month: string;
   limit: number | null; // this month's amount; null = none set
   limit_is_auto: boolean;
@@ -923,4 +924,82 @@ export interface LoanStatementResult {
   check: { rows: number; max_diff: number; matches: boolean } | null;
   events: LoanStatementEvent[];
   match: { account_id: number; name: string; differences: LoanStatementDiff[] } | null;
+}
+
+// ---------------------------------------------------------------- savings plan (F18)
+
+export type SavingsRule = '50_30_20' | '60_20_20' | '70_20_10' | '80_20' | 'custom';
+export type SavingsBasis = 'actual' | 'avg3' | 'fixed';
+
+export interface SavingsSettings {
+  rule: SavingsRule;
+  needs: number | null; // % (null with 80/20: needs and wants share one "spending" target)
+  wants: number | null;
+  savings: number;
+  basis: SavingsBasis;
+  fixed_income: number | null; // paise a month
+}
+
+export interface SavingsShare {
+  amount: number;
+  pct: number | null;
+  target_pct: number | null;
+  target: number | null;
+  diff: number | null; // amount − target
+}
+
+export interface SavingsLine {
+  category_id: number | null;
+  name: string;
+  icon: string;
+  color: string;
+  amount: number;
+  before: number | null;
+}
+
+export interface SavingsSuggestion {
+  kind: string;
+  tone: 'warn' | 'info' | 'good';
+  title: string;
+  detail: string;
+  amount: number | null;
+  items: SavingsLine[];
+}
+
+export interface SavingsPlan {
+  settings: SavingsSettings;
+  period: string;
+  period_label: string;
+  months: number;
+  period_start: string;
+  period_end: string;
+  income: number;
+  income_used: number;
+  needs: SavingsShare;
+  wants: SavingsShare;
+  spending: SavingsShare;
+  savings: SavingsShare;
+  savings_split: { to_investments: number; to_goals: number; left_in_bank: number };
+  needs_lines: SavingsLine[];
+  wants_lines: SavingsLine[];
+  uncategorised: number;
+  emi_monthly: number;
+  suggestions: SavingsSuggestion[];
+}
+
+export interface BudgetProposal {
+  category_id: number;
+  name: string;
+  icon: string;
+  color: string;
+  average: number;
+  amount: number;
+  budget_name: string | null;
+}
+
+export interface BudgetProposals {
+  wants_target: number;
+  total_average: number;
+  items: BudgetProposal[];
+  taken: BudgetProposal[];
 }

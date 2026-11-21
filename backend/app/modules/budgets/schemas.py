@@ -9,6 +9,7 @@ class BudgetIn(BaseModel):
     active: bool = True
     mode: BudgetMode = BudgetMode.manual
     amount: int = Field(default=0, ge=0, le=10**13)  # paise per month (fixed / rollover)
+    category_ids: list[int] = []  # expenses in these categories count here by themselves
 
     @field_validator("name")
     @classmethod
@@ -24,6 +25,7 @@ class BudgetPatch(BaseModel):
     active: bool | None = None
     mode: BudgetMode | None = None
     amount: int | None = Field(default=None, ge=0, le=10**13)
+    category_ids: list[int] | None = None
 
 
 class LimitIn(BaseModel):
@@ -36,6 +38,7 @@ class BudgetOut(ORM):
     active: bool
     mode: str
     amount: int
+    category_ids: list[int] = []
     month: str = ""  # YYYY-MM this row describes
     limit: int | None = None  # None = no amount for this month
     limit_is_auto: bool = False  # filled in from the mode (not set by hand)

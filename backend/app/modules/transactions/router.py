@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session, aliased
 from ...db import get_db
 from ..accounts.models import Account
 from ..auth.security import current_user
+from ..budgets.models import BudgetCategory
+from ..budgets.service import categories_of, in_budget
 from ..categories.models import Category, Tag
 from ..rules.engine import run_on_new
 from .models import Transaction, TransactionType
@@ -19,6 +21,7 @@ router = APIRouter(prefix="/transactions", tags=["transactions"], dependencies=[
 def _filtered(
     q,
     *,
+    db: Session,
     type_: TransactionType | None,
     account_id: int | None,
     category_id: int | None,
@@ -46,8 +49,13 @@ def _filtered(
         q = q.where(Transaction.category_id.in_(cats), Transaction.type == TransactionType.withdrawal.value)
     if no_budget:
         q = q.where(Transaction.budget_id.is_(None), Transaction.type == TransactionType.withdrawal.value)
+        counted = list(db.scalars(select(BudgetCategory.category_id)))  # categories a budget counts by itself
+        if counted:
+            q = q.where(or_(Transaction.category_id.is_(None), Transaction.category_id.not_in(counted)))
     elif budget_id:
-        q = q.where(Transaction.budget_id == budget_id)
+        q = q.where(
+            in_budget(budget_id, categories_of(db, budget_id)), Transaction.type == TransactionType.withdrawal.value
+        )
     if bill_id:
         q = q.where(Transaction.bill_id == bill_id)
     if loan_id:  # a loan's EMIs, interest and money received (the loan's id, not its account's)
@@ -99,6 +107,7 @@ def list_transactions(
 ) -> TransactionPage:
     """One page of transactions (newest first) plus totals for the whole filtered set."""
     f = dict(
+        db=db,
         type_=type,
         account_id=account_id,
         category_id=category_id,

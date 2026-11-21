@@ -25,6 +25,7 @@ from .modules.overview.router import router as overview_router
 from .modules.piggybanks.router import router as piggybanks_router
 from .modules.reset.router import router as reset_router
 from .modules.rules.router import router as rules_router
+from .modules.savings.router import router as savings_router
 from .modules.statements.router import router as statements_router
 from .modules.transactions.router import router as transactions_router
 
@@ -67,6 +68,7 @@ for r in (
     funds_router,  # before investments_router: /investments/cas isn't an account id
     investments_router,
     rules_router,
+    savings_router,
     gmail_router,
     inbox_router,
     statements_router,

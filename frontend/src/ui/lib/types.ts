@@ -449,6 +449,8 @@ export interface GmailRef {
 
 export interface GmailStatus {
   client_configured: boolean;
+  client_from_env: boolean; // MONEYMAP_GOOGLE_CLIENT_JSON on the server: nothing to paste here
+  client_env_error: string | null;
   client_id_hint: string | null;
   connected: boolean;
   email: string | null;
@@ -1002,4 +1004,28 @@ export interface BudgetProposals {
   total_average: number;
   items: BudgetProposal[];
   taken: BudgetProposal[];
+}
+
+// ---------------------------------------------------------------- start-up guide (F20)
+
+export interface GuideStep {
+  key: string;
+  title: string;
+  why: string;
+  href: string;
+  optional: boolean;
+  manual: boolean;
+  detail: string;
+  done: boolean;
+  skipped: boolean;
+}
+
+export interface Guide {
+  steps: GuideStep[];
+  done: number;
+  total: number;
+  hidden: boolean;
+  finished: boolean;
+  show_first: boolean;
+  setup_page: boolean; // a new install: show the setup page first
 }

@@ -11,6 +11,7 @@ import { ErrorState } from '../primitives/ErrorState';
 import { Icon } from '../primitives/Icon';
 import { Money } from '../primitives/Money';
 import { Skeleton } from '../primitives/Skeleton';
+import { BackToSetup } from '../shared/BackToSetup';
 
 const ACTION_LABEL: Record<CasAction, string> = {
   link: 'Already recorded — link it',
@@ -126,6 +127,7 @@ export function CasReviewPage({ id }: { id: number }) {
 
   return (
     <div className="content-wrap fade-in" style={{ maxWidth: 1180 }}>
+      <BackToSetup step="funds" />
       <div className="page-head">
         <div style={{ minWidth: 0 }}>
           <div className="muted" style={{ fontSize: 12.5 }}><Link href="/investments">Investments</Link> /</div>

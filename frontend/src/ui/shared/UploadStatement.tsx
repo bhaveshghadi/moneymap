@@ -9,6 +9,7 @@ import { Button } from '../primitives/Button';
 import { CategoryGlyph } from '../primitives/CategoryGlyph';
 import { Icon } from '../primitives/Icon';
 import { DrawerHead } from './DrawerHead';
+import { useStay } from '../contexts/StayCtx';
 
 const MAX_MB = 15;
 
@@ -34,6 +35,7 @@ export function UploadStatement({ onClose, cas = false }: { onClose: () => void;
 function Body({ cas }: { cas: boolean }) {
   const close = useDialogClose();
   const router = useRouter();
+  const stay = useStay();
   const { bump } = useShell();
   const accounts = useApi<Account[]>('/accounts?type=asset&type=cash&type=credit_card');
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -85,14 +87,14 @@ function Body({ cas }: { cas: boolean }) {
         close();
         // Already opened (from the Inbox or an earlier upload) → say so on the review page.
         const note = res.opened_existing ? '?existing=1' : res.gmail_message_id ? '?existing=email' : '';
-        router.push(`/statements/${res.id}${note}`);
+        router.push(`/statements/${res.id}${note}${stay ? `${note ? '&' : '?'}from=setup` : ''}`);
       }
     } catch (err) {
       const code = err instanceof ApiError ? err.code : undefined;
       if (code === 'cas' && err instanceof ApiError && err.detail?.cas_id) {
         bump();
         close();
-        router.push(`/investments/cas/${err.detail.cas_id}`);
+        router.push(`/investments/cas/${err.detail.cas_id}${stay ? '?from=setup' : ''}`);
         return;
       }
       if (code === 'loan_statement' && err instanceof ApiError && (err.detail?.file_ref || err.detail?.attachment_id)) {

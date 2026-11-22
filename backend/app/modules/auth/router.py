@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ...config import get_settings
 from ...db import get_db
 from ..categories.seed import seed_categories
-from .models import User
+from .models import Setting, User
 from .schemas import AuthStatus, Credentials, PasswordChange, SetupIn
 from .security import clear_session, current_user, hash_password, set_session, user_from_request, verify_password
 
@@ -39,6 +39,9 @@ def setup(body: SetupIn, response: Response, db: Session = Depends(get_db)) -> A
     user = User(username=body.username.strip(), password_hash=hash_password(body.password))
     db.add(user)
     seed_categories(db)
+    from ..guide.service import SETUP_KEY
+
+    db.add(Setting(key=SETUP_KEY, value="pending"))  # a brand-new install: show the setup page first
     db.commit()
     set_session(response, user)
     return AuthStatus(setup_required=False, authenticated=True, username=user.username)

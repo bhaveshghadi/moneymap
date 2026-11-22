@@ -16,6 +16,7 @@ from .modules.emergency.router import router as emergency_router
 from .modules.gmail.fetch import recover_stuck_runs
 from .modules.gmail.inbox_router import router as inbox_router
 from .modules.gmail.router import router as gmail_router
+from .modules.guide.router import router as guide_router
 from .modules.investments.fund_router import router as funds_router
 from .modules.investments.nav import start_daily_updates
 from .modules.investments.router import router as investments_router
@@ -69,6 +70,7 @@ for r in (
     investments_router,
     rules_router,
     savings_router,
+    guide_router,
     gmail_router,
     inbox_router,
     statements_router,

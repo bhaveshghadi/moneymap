@@ -29,7 +29,7 @@ export default function LoginPage() {
     setBusy(true);
     try {
       await api(setup ? '/auth/setup' : '/auth/login', { method: 'POST', body: { username, password } });
-      router.replace('/');
+      router.replace(setup ? '/welcome' : '/'); // a new install: the setup page first
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);

@@ -10,6 +10,7 @@ import { Button } from '../primitives/Button';
 import { CategoryGlyph } from '../primitives/CategoryGlyph';
 import { SegmentedControl } from '../primitives/SegmentedControl';
 import { DrawerHead } from './DrawerHead';
+import { useStay } from '../contexts/StayCtx';
 
 // ---------------------------------------------------------------- labels shared by the pages
 
@@ -195,6 +196,7 @@ export function InvestmentForm({
 function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onImportCas?: () => void }) {
   const close = useDialogClose();
   const router = useRouter();
+  const stay = useStay();
   const { bump } = useShell();
   const banks = useApi<Account[]>('/accounts?type=asset&type=cash&include_inactive=false');
   const editing = !!investment;
@@ -310,7 +312,7 @@ function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onIm
         const made = await api<InvestmentDetail>('/investments', { method: 'POST', body });
         bump();
         close();
-        router.push(`/investments/${made.id}`);
+        if (!stay) router.push(`/investments/${made.id}`);
       }
     } catch (err) {
       setError((err as Error).message);

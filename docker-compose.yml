@@ -12,6 +12,10 @@ services:
       TZ: Asia/Kolkata
       # Set to "true" when you serve it over HTTPS (host nginx with TLS).
       MONEYMAP_COOKIE_SECURE: "${MONEYMAP_COOKIE_SECURE:-false}"
+      # Gmail: your Google "Desktop app" OAuth client (see .env.example). Empty = paste it in Settings instead.
+      MONEYMAP_GOOGLE_CLIENT_JSON: "${MONEYMAP_GOOGLE_CLIENT_JSON:-}"
+      MONEYMAP_GOOGLE_CLIENT_ID: "${MONEYMAP_GOOGLE_CLIENT_ID:-}"
+      MONEYMAP_GOOGLE_CLIENT_SECRET: "${MONEYMAP_GOOGLE_CLIENT_SECRET:-}"
     volumes:
       - data:/data          # Compose names it moneymap_data
     restart: unless-stopped

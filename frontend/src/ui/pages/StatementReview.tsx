@@ -17,6 +17,7 @@ import { DrawerHead } from '../shared/DrawerHead';
 import { useTxn } from '../contexts/TxnCtx';
 import type { Txn } from '../lib/types';
 import { CategoryOptions, kindFor } from '../shared/CategoryOptions';
+import { BackToSetup } from '../shared/BackToSetup';
 
 type Filter = 'all' | 'needs' | 'ready' | 'duplicate' | 'skipped' | 'imported';
 const FILTERS: { id: Filter; label: string; match: (s: StatementRowStatus) => boolean }[] = [
@@ -200,6 +201,7 @@ export function StatementReviewPage({ id }: { id: number }) {
 
   return (
     <div className="content-wrap fade-in" style={{ maxWidth: 1180 }}>
+      <BackToSetup step="statements" />
       <div className="page-head">
         <div style={{ minWidth: 0 }}>
           <h1 style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Review statement</h1>

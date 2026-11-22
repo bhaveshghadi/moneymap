@@ -13,6 +13,7 @@ import { Icon } from '../primitives/Icon';
 import { Money } from '../primitives/Money';
 import { DrawerHead } from './DrawerHead';
 import { FIRST_INTEREST_LABEL, LoanFormBody, METHOD_LABEL, kindLabel } from './LoanForm';
+import { useStay } from '../contexts/StayCtx';
 
 const MAX_MB = 15;
 
@@ -351,6 +352,7 @@ export async function applyEvents(accountId: number, events: LoanStatementEvent[
 function UpdateLoan({ result, accountId }: { result: LoanStatementResult; accountId: number }) {
   const close = useDialogClose();
   const router = useRouter();
+  const stay = useStay();
   const { bump } = useShell();
   const loan = useApi<Loan>(`/loans/${accountId}`);
   const diffs = result.match?.differences ?? [];
@@ -369,7 +371,7 @@ function UpdateLoan({ result, accountId }: { result: LoanStatementResult; accoun
       await applyEvents(accountId, result.events, picks);
       bump();
       close();
-      router.push(`/loans/${accountId}`);
+      if (!stay) router.push(`/loans/${accountId}`);
     } catch (err) {
       setError((err as Error).message);
       setSaving(false);

@@ -14,6 +14,7 @@ import { Icon } from '../primitives/Icon';
 import { DrawerHead } from './DrawerHead';
 import { CategoryOptions } from './CategoryOptions';
 import { CheckNote, StatementEvents, applyEvents, initialPicks, type EventPick } from './LoanStatement';
+import { useStay } from '../contexts/StayCtx';
 
 export const LOAN_KINDS: { value: LoanKind; label: string }[] = [
   { value: 'home', label: 'Home loan' },
@@ -166,6 +167,7 @@ function startValues(st?: LoanStatementResult) {
 export function LoanFormBody({ initial, banner }: { initial?: LoanStatementResult; banner?: ReactNode } = {}) {
   const close = useDialogClose();
   const router = useRouter();
+  const stay = useStay();
   const { bump } = useShell();
   const { masked } = useMask();
   const banks = useApi<Account[]>('/accounts?type=asset&type=cash&include_inactive=false');
@@ -261,7 +263,7 @@ export function LoanFormBody({ initial, banner }: { initial?: LoanStatementResul
       if (initial) await applyEvents(res.id, initial.events, picks); // ticked part-payments / rate changes
       bump();
       close();
-      router.push(`/loans/${res.id}`);
+      if (!stay) router.push(`/loans/${res.id}`);
     } catch (err) {
       if (id !== null) {
         bump();

@@ -210,6 +210,7 @@ def test_connect_callback_and_paste_flow(client, connected, fake):
     st = client.get("/api/gmail/status").json()
     assert st["connected"] and st["email"] == "me@example.com"
     # wrong state is refused
+    client.post("/api/guide", json={"action": "setup_done"})  # outside the setup page: back to Settings
     client.post("/api/gmail/disconnect")
     r = client.post("/api/gmail/connect", json={"origin": "http://localhost:9009"}).json()
     q = parse_qs(urlparse(r["url"]).query)

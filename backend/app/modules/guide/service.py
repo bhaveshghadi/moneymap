@@ -22,6 +22,13 @@ from ..transactions.models import Transaction
 from .schemas import GuideOut, GuideStep
 
 KEY = "guide.state"  # {"hidden": bool, "checked": [step keys], "skipped": [step keys]}
+SETUP_KEY = "setup.page"  # "pending" on a brand-new install until the setup page is finished or put off
+
+
+def setup_pending(db: Session) -> bool:
+    row = db.get(Setting, SETUP_KEY)
+    return row is not None and row.value == "pending"
+
 
 # (key, title, why, link, optional, can be ticked by hand)
 STEPS: list[tuple[str, str, str, str, bool, bool]] = [
@@ -233,11 +240,18 @@ def guide(db: Session) -> GuideOut:
         hidden=s["hidden"],
         finished=finished,
         show_first=not s["hidden"] and not finished,
+        setup_page=setup_pending(db),
     )
 
 
 def mark(db: Session, key: str, what: str) -> GuideOut:
     """what: check | skip | undo — for one step; hide | show — for the whole guide."""
+    if what == "setup_done":
+        row = db.get(Setting, SETUP_KEY)
+        if row is not None:
+            row.value = "done"
+            db.commit()
+        return guide(db)
     s = _state(db)
     if what == "hide":
         s["hidden"] = True

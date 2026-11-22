@@ -95,12 +95,15 @@ export function GmailCard() {
       <div className="card-pad" style={{ paddingTop: 4 }}>
         {error && <div className="form-error" role="alert">{error}</div>}
         {notice && <div className="note privacy" style={{ marginBottom: 14 }}><Icon name="check" size={15} /> {notice}</div>}
+        {st?.client_env_error && (
+          <div className="form-error" role="alert">{st.client_env_error} — fix it in the server&apos;s .env and restart MoneyMap.</div>
+        )}
 
         {loadError && !st ? (
           <ErrorState message={loadError} onRetry={reload} />
         ) : !st ? (
           <div className="muted" style={{ fontSize: 13 }}>Loading…</div>
-        ) : !st.client_configured || replacing ? (
+        ) : !st.client_configured || (replacing && !st.client_from_env) ? (
           <form onSubmit={saveClient}>
             <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--fg-2)' }}>
               MoneyMap reads bank, card and loan statement emails (and, if you choose, transaction alerts) with <b>your own</b> Google OAuth client, so no third party ever sees your mail.
@@ -115,7 +118,10 @@ export function GmailCard() {
             <div className="field">
               <label htmlFor="gm-json">OAuth client JSON</label>
               <textarea id="gm-json" className="inp t-mono" style={{ minHeight: 110, fontSize: 12.5 }} value={jsonText} onChange={(e) => setJsonText(e.target.value)} placeholder='{"installed":{"client_id":"…","client_secret":"…",…}}' required />
-              <div className="hint">Stored encrypted in MoneyMap&apos;s database on your server, together with the Gmail token.</div>
+              <div className="hint">
+                Stored encrypted in MoneyMap&apos;s database on your server, together with the Gmail token. Or keep it out of the database: put it in
+                the server&apos;s <span className="t-mono">.env</span> as <span className="t-mono">MONEYMAP_GOOGLE_CLIENT_JSON</span> and restart.
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <Button variant="primary" type="submit" disabled={busy}>Save client</Button>
@@ -124,7 +130,10 @@ export function GmailCard() {
           </form>
         ) : !st.connected ? (
           <>
-            <div className="kv"><span className="k">OAuth client</span><span className="v t-mono">{st.client_id_hint}</span></div>
+            <div className="kv">
+              <span className="k">OAuth client</span>
+              <span className="v t-mono">{st.client_id_hint}{st.client_from_env && <span className="badge neutral" style={{ marginLeft: 6, fontFamily: 'var(--font-text)' }}>From the server</span>}</span>
+            </div>
             <p style={{ fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.55 }}>
               Next, sign in with Google and allow <b>read-only</b> Gmail access. Google may warn that the app isn&apos;t verified —
               that&apos;s expected for your own client; choose <i>Continue</i>.
@@ -153,7 +162,7 @@ export function GmailCard() {
                 <button type="button" className="gbtn" onClick={connect} disabled={busy}>
                   <Icon name="mail" size={18} color="var(--red-500)" /> Connect Gmail (read-only)
                 </button>
-                <Button variant="ghost" size="sm" onClick={() => setReplacing(true)}>Use a different client</Button>
+                {!st.client_from_env && <Button variant="ghost" size="sm" onClick={() => setReplacing(true)}>Use a different client</Button>}
               </div>
             )}
           </>
@@ -161,12 +170,14 @@ export function GmailCard() {
           <>
             <div className="kv"><span className="k">Account</span><span className="v">{st.email ?? 'Connected'}</span></div>
             <div className="kv"><span className="k">Access</span><span className="v">Read-only (gmail.readonly)</span></div>
+            {st.client_from_env && <div className="kv"><span className="k">OAuth client</span><span className="v">From the server (MONEYMAP_GOOGLE_CLIENT_JSON)</span></div>}
             <div className="kv"><span className="k">Connected</span><span className="v">{st.connected_at ? new Date(st.connected_at).toLocaleString('en-IN') : '—'}</span></div>
             <div className="kv"><span className="k">Fetched up to</span><span className="v">{st.last_fetch_to ?? 'Nothing fetched yet'}</span></div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
               <Button variant="secondary" size="sm" icon="unplug" onClick={() => run(() => api('/gmail/disconnect', { method: 'POST' }))} disabled={busy}>
                 Disconnect
               </Button>
+              {!st.client_from_env && (
               <Button
                 variant={confirmRemove ? 'primary' : 'ghost'}
                 size="sm"
@@ -176,6 +187,7 @@ export function GmailCard() {
               >
                 {confirmRemove ? 'Confirm: forget client & disconnect' : 'Remove OAuth client'}
               </Button>
+              )}
             </div>
             <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>Disconnecting also revokes MoneyMap&apos;s access at Google. Emails already fetched stay in the Inbox.</p>
           </>

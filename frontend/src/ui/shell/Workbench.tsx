@@ -15,7 +15,7 @@ import { ScrollTop } from './ScrollTop';
  * topbar around the routed page. Checks the session first and sends
  * signed-out or first-run visitors to /login.
  */
-export function WorkbenchShell({ children }: { children: ReactNode }) {
+export function WorkbenchShell({ children, bare = false }: { children: ReactNode; bare?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -40,6 +40,17 @@ export function WorkbenchShell({ children }: { children: ReactNode }) {
       <div className="boot" aria-label="Loading">
         <div className="boot-bar"><i /></div>
       </div>
+    );
+  }
+
+  if (bare) {
+    // the setup page: signed in, full screen, no sidebar / top bar
+    return (
+      <MaskProvider>
+        <ShellProvider username={status.username}>
+          <TxnProvider>{children}</TxnProvider>
+        </ShellProvider>
+      </MaskProvider>
     );
   }
 

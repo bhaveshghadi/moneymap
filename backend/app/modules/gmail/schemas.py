@@ -27,6 +27,8 @@ class GmailConnectOut(BaseModel):
 
 class GmailStatus(BaseModel):
     client_configured: bool
+    client_from_env: bool = False  # set in MONEYMAP_GOOGLE_CLIENT_JSON: not pasted or removed in Settings
+    client_env_error: str | None = None  # set but unreadable
     client_id_hint: str | None = None
     connected: bool
     email: str | None = None

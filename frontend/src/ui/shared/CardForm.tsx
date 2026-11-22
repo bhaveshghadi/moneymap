@@ -10,6 +10,7 @@ import { Button } from '../primitives/Button';
 import { SegmentedControl } from '../primitives/SegmentedControl';
 import { CategoryGlyph, PALETTE } from '../primitives/CategoryGlyph';
 import { DrawerHead } from './DrawerHead';
+import { useStay } from '../contexts/StayCtx';
 
 const CYCLE_STATUS: Record<CycleStatus, [string, string]> = {
   unbilled: ['neutral', 'Unbilled'],
@@ -127,6 +128,7 @@ export function CardForm({ card, onClose }: { card?: CardDetail; onClose: () => 
 function CardFormBody({ card }: { card?: CardDetail }) {
   const close = useDialogClose();
   const router = useRouter();
+  const stay = useStay();
   const { bump } = useShell();
   const [f, setF] = useState({
     name: card?.name ?? '',
@@ -194,7 +196,7 @@ function CardFormBody({ card }: { card?: CardDetail }) {
         const res = await api<CardDetail>('/cards', { method: 'POST', body });
         bump();
         close();
-        router.push(`/credit-cards/${res.id}`);
+        if (!stay) router.push(`/credit-cards/${res.id}`);
       }
     } catch (err) {
       setError((err as Error).message);

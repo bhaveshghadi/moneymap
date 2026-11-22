@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     gmail_consent_mb: int = 1000
     # Download mutual fund prices (NAVs) from AMFI once a day. Off in test containers.
     nav_update: bool = True
+    # Gmail: your Google "Desktop app" OAuth client, kept out of the database. Either the downloaded JSON
+    # (one line) or the id and secret. When set, Settings doesn't ask for it.
+    google_client_json: str | None = None
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
 
     @property
     def database_url(self) -> str:

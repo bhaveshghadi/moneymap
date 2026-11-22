@@ -449,6 +449,8 @@ export interface GmailRef {
 
 export interface GmailStatus {
   client_configured: boolean;
+  client_from_env: boolean; // MONEYMAP_GOOGLE_CLIENT_JSON on the server: nothing to paste here
+  client_env_error: string | null;
   client_id_hint: string | null;
   connected: boolean;
   email: string | null;
@@ -1025,4 +1027,5 @@ export interface Guide {
   hidden: boolean;
   finished: boolean;
   show_first: boolean;
+  setup_page: boolean; // a new install: show the setup page first
 }

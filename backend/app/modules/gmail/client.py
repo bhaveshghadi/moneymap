@@ -50,8 +50,47 @@ def parse_client_json(text: str) -> tuple[str, str]:
     return cid, secret
 
 
+def env_client() -> tuple[str, str] | None:
+    """The OAuth client from MONEYMAP_GOOGLE_CLIENT_JSON (or _ID + _SECRET); None when not set.
+    Raises GmailError when it's set but can't be read."""
+    from ...config import get_settings
+
+    s = get_settings()
+    if s.google_client_json and s.google_client_json.strip():
+        return parse_client_json(s.google_client_json.strip())
+    if s.google_client_id or s.google_client_secret:
+        if not (s.google_client_id and s.google_client_secret):
+            raise GmailError("Set both MONEYMAP_GOOGLE_CLIENT_ID and MONEYMAP_GOOGLE_CLIENT_SECRET.")
+        return s.google_client_id.strip(), s.google_client_secret.strip()
+    return None
+
+
 def account(db: Session) -> GmailAccount | None:
-    return db.get(GmailAccount, 1)
+    """The Gmail row. With the client in the environment it's kept in step with it: a different
+    client id drops the old connection (its token belongs to the other client)."""
+    acct = db.get(GmailAccount, 1)
+    try:
+        env = env_client()
+    except GmailError:
+        return acct  # shown on the status; the saved client (if any) keeps working meanwhile
+    if env is None:
+        return acct
+    cid, secret = env
+    if acct is None:
+        acct = GmailAccount(id=1, client_id=cid, client_secret=secret)
+        db.add(acct)
+        db.commit()
+        return acct
+    try:
+        same_secret = acct.client_secret == secret
+    except DecryptError:
+        same_secret = False
+    if acct.client_id != cid or not same_secret:
+        if acct.client_id != cid:
+            acct.token, acct.email, acct.connected_at = None, None, None
+        acct.client_id, acct.client_secret = cid, secret
+        db.commit()
+    return acct
 
 
 # ---------------------------------------------------------------- consent flow

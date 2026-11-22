@@ -49,3 +49,29 @@ def test_finished_when_every_step_done_or_skipped(client):
 
 def test_needs_login(anon):
     assert anon.get("/api/guide").status_code == 401
+
+
+def test_setup_page_only_for_new_installs(client):
+    # the client fixture signs up through /auth/setup: a brand-new install
+    g = client.get("/api/guide").json()
+    assert g["setup_page"] is True
+    g = client.post("/api/guide", json={"action": "setup_done"}).json()
+    assert g["setup_page"] is False
+
+
+def test_existing_install_has_no_setup_page(client):
+    from app.db import SessionLocal
+    from app.modules.auth.models import Setting
+
+    with SessionLocal() as db:  # an install from before the setup page existed: no flag
+        db.delete(db.get(Setting, "setup.page"))
+        db.commit()
+    assert client.get("/api/guide").json()["setup_page"] is False
+
+
+def test_gmail_callback_returns_to_the_setup_page(client):
+    r = client.get("/api/gmail/callback", params={"error": "access_denied"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/welcome?step=gmail&gmail=error")
+    client.post("/api/guide", json={"action": "setup_done"})
+    r = client.get("/api/gmail/callback", params={"error": "access_denied"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/settings?gmail=error")

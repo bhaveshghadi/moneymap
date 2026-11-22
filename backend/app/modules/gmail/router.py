@@ -27,11 +27,29 @@ def _bad(e: Exception) -> HTTPException:
     return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
 
 
+def _not_from_env() -> None:
+    try:
+        if gclient.env_client() is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "The Google client is set on the server (MONEYMAP_GOOGLE_CLIENT_JSON) — change it there.",
+            )
+    except gclient.GmailError:
+        pass  # set but unreadable: let a pasted client be used meanwhile
+
+
 @router.get("/status", response_model=GmailStatus)
 def gmail_status(db: Session = Depends(get_db)) -> GmailStatus:
     acct = gclient.account(db)
+    env_error = None
+    try:
+        from_env = gclient.env_client() is not None
+    except gclient.GmailError as e:
+        from_env, env_error = False, f"MONEYMAP_GOOGLE_CLIENT_JSON: {e}"
     return GmailStatus(
         client_configured=acct is not None,
+        client_from_env=from_env,
+        client_env_error=env_error,
         client_id_hint=(acct.client_id[:12] + "…") if acct else None,
         connected=bool(acct and acct.token),
         email=acct.email if acct else None,
@@ -44,6 +62,7 @@ def gmail_status(db: Session = Depends(get_db)) -> GmailStatus:
 @router.put("/client", response_model=GmailStatus)
 def save_client(body: GmailClientIn, db: Session = Depends(get_db)) -> GmailStatus:
     """Store the user's own Google Cloud "Desktop app" OAuth client."""
+    _not_from_env()
     try:
         cid, secret = gclient.parse_client_json(body.json_text)
     except gclient.GmailError as e:
@@ -62,6 +81,7 @@ def save_client(body: GmailClientIn, db: Session = Depends(get_db)) -> GmailStat
 @router.delete("/client", response_model=GmailStatus)
 def remove_client(db: Session = Depends(get_db)) -> GmailStatus:
     """Disconnect and forget the OAuth client. Fetched emails stay in the Inbox."""
+    _not_from_env()
     gclient.disconnect(db)
     acct = gclient.account(db)
     if acct:
@@ -85,9 +105,13 @@ def callback(
     error: str | None = None,
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    """Google redirects the browser here (loopback) after consent."""
+    """Google redirects the browser here (loopback) after consent — back to the setup page
+    when connecting from there."""
+    from ..guide.service import setup_pending
+
+    page = "/welcome?step=gmail&" if setup_pending(db) else "/settings?"
     if error:
-        return RedirectResponse(f"/settings?gmail=error&reason={error}", status_code=302)
+        return RedirectResponse(f"{page}gmail=error&reason={error}", status_code=302)
     try:
         if not code or not state:
             raise gclient.GmailError("missing_code")
@@ -95,8 +119,8 @@ def callback(
     except gclient.GmailError as e:
         from urllib.parse import quote
 
-        return RedirectResponse(f"/settings?gmail=error&reason={quote(str(e))}", status_code=302)
-    return RedirectResponse("/settings?gmail=connected", status_code=302)
+        return RedirectResponse(f"{page}gmail=error&reason={quote(str(e))}", status_code=302)
+    return RedirectResponse(f"{page}gmail=connected", status_code=302)
 
 
 @router.post("/callback-url", response_model=GmailStatus)

@@ -47,6 +47,10 @@ export function OverviewPage() {
   const router = useRouter();
   // first sign-in: open the start-up guide (once per browser session, until it's hidden or finished)
   useEffect(() => {
+    if (guide.data?.setup_page) {
+      router.replace('/welcome'); // a new install that hasn't finished (or put off) the setup page
+      return;
+    }
     if (!guide.data?.show_first) return;
     try {
       if (sessionStorage.getItem('mm-guide-opened')) return;

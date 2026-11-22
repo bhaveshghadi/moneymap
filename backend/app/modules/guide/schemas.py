@@ -22,8 +22,9 @@ class GuideOut(BaseModel):
     hidden: bool  # you closed the guide
     finished: bool  # every step done or skipped
     show_first: bool  # open it on sign-in
+    setup_page: bool  # a new install whose setup page isn't finished or put off yet
 
 
 class GuideMark(BaseModel):
-    action: Literal["check", "skip", "undo", "hide", "show"]
+    action: Literal["check", "skip", "undo", "hide", "show", "setup_done"]
     step: str | None = None

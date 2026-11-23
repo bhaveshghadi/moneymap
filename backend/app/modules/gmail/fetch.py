@@ -137,15 +137,49 @@ def human_bytes(n: int) -> str:
 # ---------------------------------------------------------------- estimate
 
 
+_LAST4_ANY = re.compile(
+    r"(?:a/c|acct|account|card|ac)\s*(?:no\.?|number|ending(?:\s+(?:with|in))?)?\s*[:.-]?\s*(?:[x*]+\s*)?([0-9]{4})\b"
+    r"|\b(?:x{2,}|\*{2,})\s*([0-9]{4})\b"
+    r"|\bending\s+(?:with\s+|in\s+)?([0-9]{4})\b"
+    r"|(?:a/c|acct|account)\s*(?:no\.?|number)\s*[:.-]?\s*[0-9]{4,}([0-9]{4})\b",
+    re.I,
+)
+
+
+def last4_of(text: str) -> str | None:
+    """The last 4 digits of an account / card in a subject or preview: "A/c XX1234", "card ending 5678",
+    "xxxx9012", "**3456"."""
+    m = _LAST4_ANY.search(text or "")
+    return next((g for g in m.groups() if g), None) if m else None
+
+
+def _last4_owners(db: Session) -> dict[str, str]:
+    """last 4 digits -> the account or card's name (bank account numbers and card last4)."""
+    from ..accounts.models import Account
+    from ..cards.models import CreditCard
+
+    out: dict[str, str] = {}
+    for a in db.scalars(select(Account).where(Account.account_number.is_not(None))):
+        digits = re.sub(r"\D", "", a.account_number or "")
+        if len(digits) >= 4:
+            out.setdefault(digits[-4:], a.name)
+    for c in db.scalars(select(CreditCard).where(CreditCard.last4.is_not(None))):
+        acct = db.get(Account, c.account_id)
+        out.setdefault(c.last4, acct.name if acct else f"Card {c.last4}")
+    return out
+
+
 def estimate(db: Session, template_ids: list[str], custom: list[str], date_from: date, date_to: date) -> GmailRun:
-    """List matching ids per query, skip ones already in the Inbox, and sum
-    sizeEstimate of the new ones (metadata only — nothing downloaded)."""
+    """List matching ids per query and, for the new ones, their sender, subject, date and size
+    (headers only — nothing downloaded), so you can pick what to fetch. Ones already in the Inbox
+    are listed too, from what's stored."""
     if date_to < date_from:
         raise gclient.GmailError("The end date is before the start date.")
     queries = build_queries(template_ids, custom, date_from, date_to)
     api = gclient.api_for(db)
     known = set(db.scalars(select(GmailMessage.id)))
     pending: list[list] = []
+    hits: list[tuple[str, int]] = []
     seen: set[str] = set()
     matched = 0
     for qi, q in enumerate(queries):
@@ -154,19 +188,51 @@ def estimate(db: Session, template_ids: list[str], custom: list[str], date_from:
                 continue
             seen.add(mid)
             matched += 1
+            hits.append((mid, qi))
             if mid not in known:
                 pending.append([mid, qi])
     # Refresh the token once up front: the worker threads must not each try
     # to refresh it (they share one DB session).
     getattr(api, "_token", lambda: None)()
     with ThreadPoolExecutor(max_workers=8) as pool:
-        sizes = list(pool.map(lambda p: api.get_message(p[0], "minimal").get("sizeEstimate", 0), pending))
+        metas = dict(
+            zip([p[0] for p in pending], pool.map(lambda p: api.get_message(p[0], "metadata"), pending), strict=True)
+        )
+    sizes = [int(m.get("sizeEstimate", 0)) for m in metas.values()]
+    found = []
+    for mid, qi in hits:
+        if mid in metas:
+            m = metas[mid]
+            payload = m.get("payload", {})
+            sent = datetime.fromtimestamp(int(m["internalDate"]) / 1000) if m.get("internalDate") else None
+            found.append({
+                "id": mid, "q": qi, "from": _header(payload, "From"), "subject": _header(payload, "Subject"),
+                "date": sent.isoformat(timespec="minutes") if sent else None,
+                "size": int(m.get("sizeEstimate", 0)), "known": False,
+            })  # fmt: skip
+        else:
+            g = db.get(GmailMessage, mid)
+            found.append({
+                "id": mid, "q": qi, "from": g.from_addr if g else None, "subject": g.subject if g else None,
+                "date": g.sent_at.isoformat(timespec="minutes") if g and g.sent_at else None,
+                "size": g.size_estimate if g else 0, "known": True,
+            })  # fmt: skip
+    # which account / card each one is for: the last 4 digits in the subject or the preview text
+    snippets = {mid: m.get("snippet") for mid, m in metas.items()}
+    owners = _last4_owners(db)
+    for f in found:
+        g = None if f["id"] in snippets else db.get(GmailMessage, f["id"])
+        text = f"{f['subject'] or ''} {html.unescape(snippets.get(f['id']) or (g.snippet if g else '') or '')}"
+        f["last4"] = last4_of(text)
+        f["account"] = owners.get(f["last4"]) if f["last4"] else None
+    found.sort(key=lambda f: (f["q"], f["date"] or ""), reverse=False)
     run = GmailRun(
         status="estimated",
         date_from=date_from,
         date_to=date_to,
         queries=queries,
         pending_ids=pending,
+        found=found,
         matched_count=matched,
         new_count=len(pending),
         bytes_estimated=int(sum(sizes)),
@@ -277,9 +343,17 @@ def store_message(db: Session, api, mid: str, query: dict, run: GmailRun) -> tup
 # ---------------------------------------------------------------- fetch
 
 
-def start_fetch(db: Session, run: GmailRun, consent: bool) -> GmailRun:
+def start_fetch(db: Session, run: GmailRun, consent: bool, ids: list[str] | None = None) -> GmailRun:
+    """Download the new emails found — only `ids` when you picked some."""
     if run.status != "estimated":
         raise gclient.GmailError(f"This fetch is already {run.status}.")
+    if ids is not None:
+        keep = set(ids)
+        run.pending_ids = [p for p in run.pending_ids if p[0] in keep]
+        if not run.pending_ids:
+            raise gclient.GmailError("Tick at least one email to fetch.")
+        run.new_count = len(run.pending_ids)
+        run.bytes_estimated = sum(f.get("size", 0) for f in run.found or [] if f["id"] in keep and not f.get("known"))
     if run.bytes_estimated > consent_threshold() and not consent:
         raise gclient.GmailError(
             f"This would download about {human_bytes(run.bytes_estimated)}. Tick the confirmation to continue."

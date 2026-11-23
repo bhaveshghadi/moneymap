@@ -55,6 +55,8 @@ class GmailRun(Base):
     date_to: Mapped[date] = mapped_column(Date)
     queries: Mapped[list] = mapped_column(JSON, default=list)  # [{label, provider_id, doc_type, query}]
     pending_ids: Mapped[list] = mapped_column(JSON, default=list)  # [[message_id, query_index], ...] not yet stored
+    # every email found: {id, q (query index), from, subject, date, size, known (already in the Inbox)}
+    found: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     matched_count: Mapped[int] = mapped_column(Integer, default=0)
     new_count: Mapped[int] = mapped_column(Integer, default=0)
     bytes_estimated: Mapped[int] = mapped_column(Integer, default=0)

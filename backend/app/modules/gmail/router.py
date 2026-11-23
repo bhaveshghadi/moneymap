@@ -170,7 +170,7 @@ def start(run_id: int, body: GmailStartIn, db: Session = Depends(get_db)) -> Gma
     """Step 2: download the new emails + attachments in the background."""
     run = _run(db, run_id)
     try:
-        gfetch.start_fetch(db, run, body.consent)
+        gfetch.start_fetch(db, run, body.consent, body.ids)
     except gclient.GmailError as e:
         raise _bad(e) from None
     db.refresh(run)

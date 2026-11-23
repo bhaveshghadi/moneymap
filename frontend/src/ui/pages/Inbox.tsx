@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { api, ApiError, qs, replaceQuery } from '../lib/api';
 import { useApi, useShell } from '../contexts/ShellCtx';
 import { useTxn } from '../contexts/TxnCtx';
-import type { Account, GmailProvider, GmailRun, GmailStatus, InboxDetail, InboxItem, InboxPage as InboxPageT } from '../lib/types';
+import type { Account, GmailFound, GmailProvider, GmailRun, GmailStatus, InboxDetail, InboxItem, InboxPage as InboxPageT } from '../lib/types';
 import { fmtDate, rs, todayIso } from '../lib/format';
 import { Button } from '../primitives/Button';
 import { Money } from '../primitives/Money';
@@ -452,9 +452,79 @@ function EmailBody({ id }: { id: string }) {
 
 // ---------------------------------------------------------------- fetch drawer
 
+function humanBytes(n: number): string {
+  if (n < 1000) return `${n} B`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)} KB`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(1)} MB`;
+  return `${(n / 1_000_000_000).toFixed(2)} GB`;
+}
+
+/** The emails found, grouped by what they matched: tick what to fetch. Ones already in the Inbox are greyed. */
+function FoundList({ run, picked, setPicked }: { run: GmailRun; picked: Set<string>; setPicked: (s: Set<string>) => void }) {
+  const groups = new Map<number, GmailFound[]>();
+  for (const f of run.found) {
+    if (!groups.has(f.q)) groups.set(f.q, []);
+    groups.get(f.q)!.push(f);
+  }
+  const set = (ids: string[], on: boolean) => {
+    const next = new Set(picked);
+    for (const id of ids) {
+      if (on) next.add(id);
+      else next.delete(id);
+    }
+    setPicked(next);
+  };
+  return (
+    <div className="gm-found">
+      {[...groups.entries()].map(([q, list]) => {
+        const fresh = list.filter((f) => !f.known);
+        const on = fresh.filter((f) => picked.has(f.id)).length;
+        const sorted = [...list].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+        return (
+          <details key={q} className="gm-group" open={run.found.length <= 40}>
+            <summary>
+              <input
+                type="checkbox"
+                checked={fresh.length > 0 && on === fresh.length}
+                ref={(el) => {
+                  if (el) el.indeterminate = on > 0 && on < fresh.length;
+                }}
+                disabled={fresh.length === 0}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => set(fresh.map((f) => f.id), e.target.checked)}
+                aria-label={`Fetch all from ${run.queries[q]?.label ?? 'this search'}`}
+              />
+              <b>{run.queries[q]?.label ?? 'Search'}</b>
+              <span className="muted">{on} of {fresh.length} new{list.length > fresh.length ? ` · ${list.length - fresh.length} already in` : ''}</span>
+            </summary>
+            {sorted.map((f) => (
+              <label key={f.id} className={`gm-mail ${f.known ? 'known' : ''}`}>
+                <input type="checkbox" checked={!f.known && picked.has(f.id)} disabled={f.known} onChange={(e) => set([f.id], e.target.checked)} />
+                <span className="gm-mail-main">
+                  <span className="gm-subject">{f.subject || '(no subject)'}</span>
+                  {f.last4 && (
+                    <span className="gm-acct">
+                      <Icon name={f.account ? 'circle-check' : 'circle-help'} size={13} /> •••• {f.last4}
+                      {f.account ? ` · ${f.account}` : ' · no account with these digits'}
+                    </span>
+                  )}
+                  <span className="muted gm-meta">
+                    {f.date ? fmtDate(f.date.slice(0, 10)) : '—'} · {(f.from ?? '').replace(/<.*>/, '').trim() || f.from} · {humanBytes(f.size)}
+                    {f.known && ' · Already in the Inbox'}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </details>
+        );
+      })}
+    </div>
+  );
+}
+
 function FetchDrawer({ status, onClose }: { status: GmailStatus; onClose: () => void }) {
   return (
-    <Dialog onClose={onClose} label="Fetch from Gmail" width={560}>
+    <Dialog onClose={onClose} label="Fetch from Gmail" width={620}>
       <FetchBody status={status} />
     </Dialog>
   );
@@ -477,6 +547,7 @@ function FetchBody({ status }: { status: GmailStatus }) {
   const [selected, setSelected] = useState<string[]>(() => readLocal<string[]>(SEL_KEY, []));
   const [custom, setCustom] = useState<string>(() => readLocal<string>(CUSTOM_KEY, ''));
   const [run, setRun] = useState<GmailRun | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set()); // emails ticked to fetch
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -499,12 +570,12 @@ function FetchBody({ status }: { status: GmailStatus }) {
     writeLocal(SEL_KEY, selected.filter((id) => !alertIds.has(id)));
     writeLocal(CUSTOM_KEY, custom);
     try {
-      setRun(
-        await api<GmailRun>('/gmail/estimate', {
-          method: 'POST',
-          body: { template_ids: selected, custom: custom.split('\n'), date_from: from, date_to: to },
-        }),
-      );
+      const r = await api<GmailRun>('/gmail/estimate', {
+        method: 'POST',
+        body: { template_ids: selected, custom: custom.split('\n'), date_from: from, date_to: to },
+      });
+      setRun(r);
+      setPicked(new Set(r.found.filter((f) => !f.known).map((f) => f.id))); // everything new, ticked
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -532,7 +603,7 @@ function FetchBody({ status }: { status: GmailStatus }) {
     setError(null);
     setBusy(true);
     try {
-      const r = await api<GmailRun>(`/gmail/runs/${run.id}/start`, { method: 'POST', body: { consent } });
+      const r = await api<GmailRun>(`/gmail/runs/${run.id}/start`, { method: 'POST', body: { consent, ids: [...picked] } });
       setRun(r);
       if (['running', 'cancelling'].includes(r.status)) poll(r.id);
       else bump();
@@ -555,6 +626,8 @@ function FetchBody({ status }: { status: GmailStatus }) {
   const active = run && ['running', 'cancelling'].includes(run.status);
   const finished = run && ['done', 'cancelled', 'error'].includes(run.status);
   const pct = run && run.new_count ? Math.round((run.message_count / run.new_count) * 100) : 0;
+  const pickedBytes = run ? run.found.filter((f) => picked.has(f.id)).reduce((a, f) => a + f.size, 0) : 0;
+  const overLimit = pickedBytes > status.consent_threshold_mb * 1_000_000;
 
   return (
     <>
@@ -607,15 +680,19 @@ function FetchBody({ status }: { status: GmailStatus }) {
           <div className="stack" style={{ gap: 14 }}>
             <div className="card card-pad">
               <div className="kv"><span className="k">Range</span><span className="v">{fmtDate(run.date_from)} – {fmtDate(run.date_to)}</span></div>
-              <div className="kv"><span className="k">Matching emails</span><span className="v">{run.matched_count}</span></div>
-              <div className="kv"><span className="k">New (not in Inbox yet)</span><span className="v">{run.new_count}</span></div>
-              <div className="kv"><span className="k">Estimated download</span><span className="v">{run.bytes_human}</span></div>
+              <div className="kv"><span className="k">Found</span><span className="v">{run.matched_count} · {run.matched_count - run.new_count} already in the Inbox</span></div>
+              {run.status === 'estimated' ? (
+                <div className="kv"><span className="k">Ticked to fetch</span><span className="v">{picked.size} · about {humanBytes(pickedBytes)}</span></div>
+              ) : (
+                <div className="kv"><span className="k">Fetching</span><span className="v">{run.new_count} · about {run.bytes_human}</span></div>
+              )}
             </div>
+            {run.status === 'estimated' && run.found.length > 0 && <FoundList run={run} picked={picked} setPicked={setPicked} />}
             {run.status === 'estimated' && run.new_count === 0 && <div className="note privacy"><Icon name="check" size={15} /> Nothing new to fetch for this range.</div>}
-            {run.status === 'estimated' && run.consent_required && (
+            {run.status === 'estimated' && overLimit && (
               <label className="note warn" style={{ cursor: 'pointer' }}>
                 <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-                <span>This is more than {status.consent_threshold_mb >= 1000 ? `${status.consent_threshold_mb / 1000} GB` : `${status.consent_threshold_mb} MB`}. I understand about <b>{run.bytes_human}</b> will be downloaded to the server.</span>
+                <span>This is more than {status.consent_threshold_mb >= 1000 ? `${status.consent_threshold_mb / 1000} GB` : `${status.consent_threshold_mb} MB`}. I understand about <b>{humanBytes(pickedBytes)}</b> will be downloaded to the server.</span>
               </label>
             )}
             {(active || finished) && (
@@ -646,8 +723,8 @@ function FetchBody({ status }: { status: GmailStatus }) {
         <Button variant="secondary" onClick={close}>{finished ? 'Close' : 'Cancel'}</Button>
         {!run && <Button variant="primary" type="submit" form="gm-fetch" disabled={busy}>{busy ? 'Searching Gmail…' : 'Check what’s there'}</Button>}
         {run?.status === 'estimated' && run.new_count > 0 && (
-          <Button variant="primary" icon="download" onClick={start} disabled={busy || (run.consent_required && !consent)}>
-            Fetch {run.new_count} email{run.new_count === 1 ? '' : 's'}
+          <Button variant="primary" icon="download" onClick={start} disabled={busy || picked.size === 0 || (overLimit && !consent)}>
+            Fetch {picked.size} email{picked.size === 1 ? '' : 's'}
           </Button>
         )}
       </div>

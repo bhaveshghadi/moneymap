@@ -393,3 +393,33 @@ def test_reset_everything_removes_gmail(client, connected, fake, monkeypatch):
     assert st["client_configured"] is False and st["connected"] is False
     assert client.get("/api/inbox").json()["total"] == 0
     assert list(gfetch.attachments_dir().glob("*")) == []
+
+
+def test_pick_which_emails_to_fetch(client, connected, fake):
+    est = estimate(client)
+    found = {f["id"]: f for f in est["found"]}
+    assert set(found) == {"m1", "m2", "m3", "m4"} and not any(f["known"] for f in found.values())
+    m1 = found["m1"]
+    assert m1["subject"] == "Your HDFC Bank statement" and "hdfcbank" in m1["from"] and m1["size"] == 50_000
+    assert m1["date"].startswith("2026-11-02") and est["queries"][m1["q"]]["label"]
+    assert fake.full_gets == []  # still nothing downloaded
+    # nothing ticked is refused; then fetch only two
+    assert client.post(f"/api/gmail/runs/{est['id']}/start", json={"ids": []}).status_code == 422
+    run = client.post(f"/api/gmail/runs/{est['id']}/start", json={"ids": ["m1", "m2"]}).json()
+    run = client.get(f"/api/gmail/runs/{run['id']}").json()
+    assert run["status"] == "done" and run["message_count"] == 2 and run["bytes_estimated"] == 100_000
+    assert sorted(fake.full_gets) == ["m1", "m2"]
+    # the next search lists them as already in the Inbox
+    again = {f["id"]: f["known"] for f in estimate(client)["found"]}
+    assert again == {"m1": True, "m2": True, "m3": False, "m4": False}
+
+
+def test_found_emails_show_which_account(client, connected, fake):
+    """The last 4 digits in a subject or preview, matched to your account / card."""
+    client.post("/api/accounts", json={"name": "HDFC Savings", "type": "asset", "account_number": "50100012345678"})
+    fake.messages["m1"]["payload"]["headers"][1]["value"] = "Statement for A/c XX5678 — November"
+    fake.messages["m3"]["snippet"] = "Your card ending 9999 statement is ready"
+    found = {f["id"]: f for f in estimate(client)["found"]}
+    assert (found["m1"]["last4"], found["m1"]["account"]) == ("5678", "HDFC Savings")
+    assert (found["m3"]["last4"], found["m3"]["account"]) == ("9999", None)  # no account with those digits
+    assert found["m2"]["last4"] is None

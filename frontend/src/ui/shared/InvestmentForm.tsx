@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../lib/api';
 import { useApi, useShell } from '../contexts/ShellCtx';
-import type { Account, Investment, InvestmentDetail, InvestmentDue, InvestmentKind, Scheme } from '../lib/types';
+import type { Account, Investment, InvestmentDetail, InvestmentDue, InvestmentKind, PropertyStatus, Scheme } from '../lib/types';
 import { fmtDate, fmtNav, paiseToInput, toPaise, todayIso } from '../lib/format';
 import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { Button } from '../primitives/Button';
@@ -61,6 +61,7 @@ export const DUE_LABEL: Record<InvestmentDue['what'], string> = {
   premium: 'Premium due',
   due_back: 'Due back',
   instalment: 'Chit instalment',
+  balance: 'Payment due',
 };
 const PO_COMPOUNDING: Record<string, string> = { nsc: 'yearly', kvp: 'yearly', td: 'quarterly', rd: 'quarterly', scss: 'payout', mis: 'payout' };
 
@@ -121,7 +122,7 @@ function labelFor(k: Key, kind: InvestmentKind, sub: string): string {
       kind === 'mf' ? 'Folio number' : kind === 'insurance' ? 'Policy number' : sub === 'epf' ? 'UAN' : sub === 'nps' ? 'PRAN' : kind === 'retirement' || kind === 'post_office' ? 'Account / certificate no.' : kind === 'fd' ? 'FD number' : 'Account number',
     person: 'Lent to',
     amount:
-      kind === 'lent' ? 'Amount lent (₹)' : kind === 'mf' ? 'Put in (₹)' : kind === 'retirement' ? 'Put in so far (₹)' : ['gold', 'stocks', 'crypto', 'property'].includes(kind) ? 'Bought for (₹)' : 'Amount (₹)',
+      kind === 'lent' ? 'Amount lent (₹)' : kind === 'mf' ? 'Put in (₹)' : kind === 'retirement' ? 'Put in so far (₹)' : kind === 'property' ? 'Paid so far (₹)' : ['gold', 'stocks', 'crypto'].includes(kind) ? 'Bought for (₹)' : 'Amount (₹)',
     instalment: kind === 'insurance' ? 'Premium (₹)' : 'Every month (₹)',
     rate: kind === 'lent' ? 'Interest % a year' : 'Interest rate (% a year)',
     compounding: 'Interest added',
@@ -208,6 +209,9 @@ function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onIm
   const [money, setMoney] = useState<'already' | 'bank'>('already');
   const [payFrom, setPayFrom] = useState(investment?.pay_from_id ? String(investment.pay_from_id) : '');
   const [notes, setNotes] = useState(investment?.notes ?? '');
+  // property bought in parts: the agreed price and how far the purchase is (the plan is on its page)
+  const [dealPrice, setDealPrice] = useState('');
+  const [dealStatus, setDealStatus] = useState<PropertyStatus>('agreement');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -310,6 +314,10 @@ function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onIm
         close();
       } else {
         const made = await api<InvestmentDetail>('/investments', { method: 'POST', body });
+        if (kind === 'property' && dealPrice.trim()) {
+          const price = toPaise(dealPrice);
+          if (price && price > 0) await api(`/investments/${made.id}/property`, { method: 'PUT', body: { price, status: dealStatus } });
+        }
         bump();
         close();
         if (!stay) router.push(`/investments/${made.id}`);
@@ -341,7 +349,8 @@ function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onIm
       OPTIONAL.includes(k) ||
       (k === 'rate' && kind === 'lent') ||
       (k === 'maturity' && (kind === 'lent' || kind === 'insurance')) ||
-      (k === 'years' && v.frequency === 'single');
+      (k === 'years' && v.frequency === 'single') ||
+      (kind === 'property' && (k === 'amount' || k === 'start')); // payments can be recorded from the bank later
     const text = editing && k === 'amount' ? 'Already invested before tracking (₹)' : labelFor(k, kind, sub);
     const label = (
       <label htmlFor={id}>
@@ -508,6 +517,32 @@ function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onIm
               {(banks.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
+        )}
+        {kind === 'property' && !editing && (
+          <div className="card card-pad" style={{ marginBottom: 14, background: 'var(--bg-subtle)' }}>
+            <b style={{ fontSize: 13.5 }}>Paid only part of it, or not registered yet?</b>
+            <div className="row2" style={{ marginTop: 10 }}>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label htmlFor="inv-deal-price">Total agreed price (₹) <span className="muted" style={{ fontWeight: 400 }}>(optional)</span></label>
+                <input id="inv-deal-price" className="inp" inputMode="decimal" value={dealPrice} onChange={(e) => setDealPrice(e.target.value)} placeholder="0.00" />
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label htmlFor="inv-deal-status">Status</label>
+                <select id="inv-deal-status" className="inp" value={dealStatus} onChange={(e) => setDealStatus(e.target.value as PropertyStatus)} disabled={!dealPrice.trim()}>
+                  <option value="booked">Booked</option>
+                  <option value="agreement">Agreement made</option>
+                  <option value="registration_pending">Registration pending</option>
+                </select>
+              </div>
+            </div>
+            <div className="hint" style={{ marginTop: 8 }}>
+              MoneyMap then shows what&apos;s paid and the balance. Add the dates for the balance, costs like stamp duty and a savings goal on the
+              property&apos;s page under <b>Purchase</b>. Until it&apos;s registered it counts as what you&apos;ve paid.
+            </div>
+          </div>
+        )}
+        {kind === 'property' && editing && (
+          <div className="hint" style={{ marginBottom: 12 }}>Agreed price, payment plan, status and costs are under <b>Purchase</b> on this property&apos;s page.</div>
         )}
         <div className="field">
           <label htmlFor="inv-notes">Notes</label>

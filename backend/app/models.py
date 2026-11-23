@@ -9,7 +9,17 @@ from .modules.cards.models import CardCycleRule, CardEmi, CreditCard  # noqa: F4
 from .modules.categories.models import Category, Tag  # noqa: F401
 from .modules.emergency.models import EmergencyFund  # noqa: F401
 from .modules.gmail.models import GmailAccount, GmailAttachment, GmailMessage, GmailRun  # noqa: F401
-from .modules.investments.models import CasFund, CasImport, CasRow, Fund, FundTxn, Investment  # noqa: F401
+from .modules.investments.models import (  # noqa: F401
+    CasFund,
+    CasImport,
+    CasRow,
+    Fund,
+    FundTxn,
+    Investment,
+    PropertyCost,
+    PropertyDeal,
+    PropertyInstalment,
+)
 from .modules.loans.models import Loan, LoanEvent  # noqa: F401
 from .modules.piggybanks.models import PiggyBank, PiggyEvent  # noqa: F401
 from .modules.rules.models import Rule  # noqa: F401

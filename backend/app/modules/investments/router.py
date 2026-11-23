@@ -9,10 +9,12 @@ from ..accounts.models import Account, AccountType
 from ..auth.security import current_user
 from ..transactions.models import Transaction
 from .matching import score
-from .models import Fund, Investment
+from .models import Fund, Investment, PropertyCost, PropertyDeal, PropertyInstalment
 from .schemas import (
     CloseIn,
+    CostIn,
     DueOut,
+    GoalIn,
     InvestmentDetail,
     InvestmentIn,
     InvestmentOut,
@@ -22,6 +24,7 @@ from .schemas import (
     LinkIn,
     LinkOut,
     MoveIn,
+    PropertyIn,
     RatesIO,
 )
 from .service import (
@@ -114,7 +117,8 @@ def _check(inv: Investment, amount: int | None, creating: bool) -> None:
         raise bad("Enter the quantity." if k != "gold" else "Enter the grams (or units for SGB).")
     if creating and k in ("fd", "post_office", "lent") and not amount:
         raise bad("Enter the amount.")
-    if creating and k in ("property", "other", "retirement") and not amount and inv.current_value is None:
+    # property: payments can come later from the bank (a plot booked, nothing paid yet is fine)
+    if creating and k in ("other", "retirement") and not amount and inv.current_value is None:
         raise bad("Enter the amount put in or the value today.")
 
 
@@ -429,3 +433,101 @@ def delete_investment(account_id: int, db: Session = Depends(get_db)) -> None:
     db.flush()
     db.delete(a)
     db.commit()
+
+
+# ---------------------------------------------------------------- property bought in parts
+
+
+def _property(db: Session, account_id: int) -> Investment:
+    inv = _get(db, account_id)
+    if inv.kind != "property":
+        raise bad("Only property has a purchase plan.")
+    return inv
+
+
+@router.put("/{account_id}/property", response_model=InvestmentDetail)
+def save_property(account_id: int, body: PropertyIn, db: Session = Depends(get_db)) -> InvestmentDetail:
+    """The deal: agreed price, details, status and the plan for the balance (replaces the plan)."""
+    inv = _property(db, account_id)
+    if body.status == "registered" and body.registered_on is None:
+        raise bad("Enter the date it was registered in your name.")
+    d = db.get(PropertyDeal, account_id) or PropertyDeal(account_id=account_id)
+    for k in ("price", "agreement_date", "status", "registered_on"):
+        setattr(d, k, getattr(body, k))
+    for k in ("size", "location", "survey_no", "seller"):
+        setattr(d, k, (getattr(body, k) or "").strip() or None)
+    if body.status != "registered":
+        d.registered_on = None
+    d.plan = [
+        PropertyInstalment(due_date=i.due_date, amount=i.amount, note=(i.note or "").strip() or None) for i in body.plan
+    ]
+    db.add(d)
+    db.commit()
+    db.refresh(inv)
+    return detail_out(db, inv)
+
+
+@router.post("/{account_id}/property/costs", response_model=InvestmentDetail)
+def add_cost(account_id: int, body: CostIn, db: Session = Depends(get_db)) -> InvestmentDetail:
+    """Stamp duty, registration, lawyer, broker … — paid now from a bank (a transfer into the property)
+    or noted as paid already."""
+    inv = _property(db, account_id)
+    d = db.get(PropertyDeal, account_id)
+    if d is None:
+        d = PropertyDeal(account_id=account_id)
+        db.add(d)
+        db.flush()
+    txn_id = None
+    if body.bank_id:
+        bank = bank_account(db, body.bank_id, "the cost is paid from")
+        label = {"stamp_duty": "Stamp duty", "registration": "Registration fee", "legal": "Legal fees",
+                 "broker": "Brokerage", "other": "Cost"}[body.kind]  # fmt: skip
+        txn_id = move(db, inv, "in", body.amount, body.date, bank, f"{label}: {inv.account.name}").id
+    d.costs.append(PropertyCost(kind=body.kind, amount=body.amount, date=body.date,
+                                note=(body.note or "").strip() or None, transaction_id=txn_id))  # fmt: skip
+    db.commit()
+    db.refresh(inv)
+    return detail_out(db, inv)
+
+
+@router.delete("/{account_id}/property/costs/{cost_id}", response_model=InvestmentDetail)
+def remove_cost(account_id: int, cost_id: int, db: Session = Depends(get_db)) -> InvestmentDetail:
+    """Remove a cost, and its payment when it was paid through MoneyMap."""
+    inv = _property(db, account_id)
+    c = db.get(PropertyCost, cost_id)
+    if c is None or c.account_id != account_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cost not found")
+    if c.transaction_id and (t := db.get(Transaction, c.transaction_id)) is not None:
+        db.delete(t)
+    d = db.get(PropertyDeal, account_id)
+    if d is not None and c in d.costs:
+        d.costs.remove(c)  # delete-orphan
+    else:
+        db.delete(c)
+    db.commit()
+    db.refresh(inv)
+    return detail_out(db, inv)
+
+
+@router.post("/{account_id}/property/goal", response_model=InvestmentDetail)
+def make_goal(account_id: int, body: GoalIn, db: Session = Depends(get_db)) -> InvestmentDetail:
+    """A piggy bank for the balance still to pay, by the last planned date; it follows the balance."""
+    from ..piggybanks.models import PiggyBank
+
+    inv = _property(db, account_id)
+    d = db.get(PropertyDeal, account_id)
+    detail = detail_out(db, inv)
+    bal = detail.property.balance if detail.property else None
+    if d is None or not bal:
+        raise bad("Enter the agreed price first — the goal is the balance still to pay.")
+    if d.goal_id and db.get(PiggyBank, d.goal_id):
+        raise bad("This property already has a goal.")
+    bank = bank_account(db, body.account_id, "the money is set aside in")
+    g = PiggyBank(name=f"{inv.account.name} — balance"[:120], account_id=bank.id, target_amount=bal,
+                  target_date=max((i.due_date for i in d.plan), default=None))  # fmt: skip
+    db.add(g)
+    db.flush()
+    d.goal_id = g.id
+    db.commit()
+    db.refresh(inv)
+    return detail_out(db, inv)

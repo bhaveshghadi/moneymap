@@ -106,9 +106,81 @@ class DueOut(BaseModel):
     name: str
     kind: str
     date: Date
-    what: str  # matures | premium | due_back | instalment
+    what: str  # matures | premium | due_back | instalment | balance (property: a planned payment)
     amount: int
     overdue: bool = False
+
+
+PropertyStatus = Literal["booked", "agreement", "registration_pending", "registered"]
+CostKind = Literal["stamp_duty", "registration", "legal", "broker", "other"]
+
+
+class InstalmentIn(BaseModel):
+    due_date: Date
+    amount: int = Field(gt=0, le=10**13)
+    note: str | None = Field(default=None, max_length=120)
+
+
+class PropertyIn(BaseModel):
+    price: int | None = Field(default=None, gt=0, le=10**13)  # paise: total agreed price
+    size: str | None = Field(default=None, max_length=60)
+    location: str | None = Field(default=None, max_length=200)
+    survey_no: str | None = Field(default=None, max_length=60)
+    seller: str | None = Field(default=None, max_length=120)
+    agreement_date: Date | None = None
+    status: PropertyStatus = "agreement"
+    registered_on: Date | None = None
+    plan: list[InstalmentIn] = []  # replaces the plan
+
+
+class CostIn(BaseModel):
+    kind: CostKind
+    amount: int = Field(gt=0, le=10**13)
+    date: Date
+    bank_id: int | None = None  # paid from this account now (a transfer into the property); None = paid already
+    note: str | None = Field(default=None, max_length=120)
+
+
+class GoalIn(BaseModel):
+    account_id: int  # the bank / cash account the money is set aside in
+
+
+class InstalmentOut(BaseModel):
+    id: int
+    due_date: Date
+    amount: int
+    note: str | None
+    paid: int  # of this instalment, from the money paid so far (oldest first)
+    status: Literal["paid", "part", "due", "overdue"]
+
+
+class CostOut(BaseModel):
+    id: int
+    kind: CostKind
+    amount: int
+    date: Date
+    note: str | None
+    transaction_id: int | None
+
+
+class PropertyOut(BaseModel):
+    price: int | None
+    size: str | None
+    location: str | None
+    survey_no: str | None
+    seller: str | None
+    agreement_date: Date | None
+    status: PropertyStatus
+    registered_on: Date | None
+    price_paid: int  # paid toward the price (money in, less costs paid through MoneyMap)
+    balance: int | None  # price − price paid; None without a price
+    costs_total: int
+    total_cost: int  # price paid + costs: what it has cost so far
+    plan: list[InstalmentOut]
+    unplanned: int | None  # balance not covered by the plan
+    costs: list[CostOut]
+    goal_id: int | None
+    goal_saved: int | None  # set aside in the goal
 
 
 class InvestmentOut(BaseModel):
@@ -153,7 +225,8 @@ class InvestmentOut(BaseModel):
     stale: bool  # a value entered by hand, over 90 days old
     no_price: bool  # no price / rate yet: value shown = invested
     next_due: DueOut | None
-    fund: FundOut | None = None  # mutual funds
+    fund: FundOut | None = None
+    property: PropertyOut | None = None  # mutual funds
 
 
 class InvestmentDetail(InvestmentOut):

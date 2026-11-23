@@ -58,6 +58,7 @@ class GmailRunOut(ORM):
     date_from: Date
     date_to: Date
     queries: list[dict]
+    found: list[dict] = []  # {id, q, from, subject, date, size, known}
     matched_count: int
     new_count: int
     bytes_estimated: int
@@ -72,6 +73,7 @@ class GmailRunOut(ORM):
 
 class GmailStartIn(BaseModel):
     consent: bool = False
+    ids: list[str] | None = None  # only these emails (None: every new one found)
 
 
 class AttachmentOut(ORM):

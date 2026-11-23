@@ -19,6 +19,7 @@ import { Progress } from '../shared/Progress';
 import { TxnRow } from '../shared/TxnRow';
 import { COMPOUNDING_LABEL, FREQUENCY_LABEL, InvestmentForm, KIND_META, subtypeLabel } from '../shared/InvestmentForm';
 import { GainText, RatesDialog, dueWhen } from './Investments';
+import { PropertySection } from '../shared/PropertyPurchase';
 
 type Dlg = null | 'edit' | 'in' | 'out' | 'value' | 'close' | 'rates' | 'link';
 
@@ -30,6 +31,7 @@ export function InvestmentDetailPage({ id }: { id: number }) {
   const { bump } = useShell();
   const { openTxn } = useTxn();
   const [dlg, setDlg] = useState<Dlg>(null);
+  const [preset, setPreset] = useState<number | undefined>(undefined); // a planned property payment
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -134,7 +136,7 @@ export function InvestmentDetailPage({ id }: { id: number }) {
           <span>Closed on {i.closed_on ? fmtDate(i.closed_on) : '—'}. It no longer counts in your net worth.</span>
         </div>
       )}
-      {i.next_due?.overdue && active && (
+      {i.next_due?.overdue && active && i.next_due.what !== 'balance' && (
         <div className="note warn" style={{ marginBottom: 16 }}>
           <Icon name="triangle-alert" size={15} />
           <span>
@@ -199,6 +201,16 @@ export function InvestmentDetailPage({ id }: { id: number }) {
       )}
       {i.notes && <div className="card card-pad" style={{ marginBottom: 16, fontSize: 13.5, whiteSpace: 'pre-wrap' }}>{i.notes}</div>}
 
+      {i.kind === 'property' && active && (
+        <PropertySection
+          inv={i}
+          onPay={(amount) => {
+            setPreset(amount);
+            setDlg('in');
+          }}
+        />
+      )}
+
       <div className="card">
         <div className="inv-group-head"><span>Money in and out</span></div>
         {i.moves.length === 0 ? (
@@ -241,7 +253,17 @@ export function InvestmentDetailPage({ id }: { id: number }) {
       )}
 
       {dlg === 'edit' && <InvestmentForm investment={i} onClose={() => setDlg(null)} />}
-      {(dlg === 'in' || dlg === 'out') && <MoveDialog inv={i} direction={dlg} onClose={() => setDlg(null)} />}
+      {(dlg === 'in' || dlg === 'out') && (
+        <MoveDialog
+          inv={i}
+          direction={dlg}
+          amount={dlg === 'in' ? preset : undefined}
+          onClose={() => {
+            setDlg(null);
+            setPreset(undefined);
+          }}
+        />
+      )}
       {dlg === 'value' && <ValueDialog inv={i} onClose={() => setDlg(null)} />}
       {dlg === 'link' && <LinkDialog inv={i} onClose={() => setDlg(null)} />}
       {dlg === 'close' && <CloseDialog inv={i} onClose={() => setDlg(null)} />}
@@ -269,19 +291,19 @@ function BankSelect({ value, onChange, label }: { value: string; onChange: (v: s
   );
 }
 
-function MoveDialog({ inv, direction, onClose }: { inv: InvestmentDetail; direction: 'in' | 'out'; onClose: () => void }) {
+function MoveDialog({ inv, direction, onClose, amount }: { inv: InvestmentDetail; direction: 'in' | 'out'; onClose: () => void; amount?: number }) {
   const title = direction === 'in' ? 'Put money in' : inv.kind === 'lent' ? 'Repayment received' : 'Take money out';
   return (
     <Dialog onClose={onClose} label={title} width={460}>
-      <MoveBody inv={inv} direction={direction} title={title} />
+      <MoveBody inv={inv} direction={direction} title={title} preset={amount} />
     </Dialog>
   );
 }
 
-function MoveBody({ inv, direction, title }: { inv: InvestmentDetail; direction: 'in' | 'out'; title: string }) {
+function MoveBody({ inv, direction, title, preset }: { inv: InvestmentDetail; direction: 'in' | 'out'; title: string; preset?: number }) {
   const close = useDialogClose();
   const { bump } = useShell();
-  const suggested = direction === 'in' && inv.instalment ? paiseToInput(inv.instalment) : '';
+  const suggested = preset ? paiseToInput(preset) : direction === 'in' && inv.instalment ? paiseToInput(inv.instalment) : '';
   const [amount, setAmount] = useState(suggested);
   const [date, setDate] = useState(todayIso());
   const [bank, setBank] = useState(inv.pay_from_id ? String(inv.pay_from_id) : '');

@@ -69,6 +69,80 @@ class Investment(Base):
     fund: Mapped["Fund | None"] = relationship(
         primaryjoin="Investment.account_id == foreign(Fund.account_id)", uselist=False, lazy="selectin", viewonly=True
     )
+    deal: Mapped["PropertyDeal | None"] = relationship(
+        primaryjoin="Investment.account_id == foreign(PropertyDeal.account_id)",
+        uselist=False,
+        lazy="selectin",
+        viewonly=True,
+    )
+
+
+PROPERTY_STATUS = ("booked", "agreement", "registration_pending", "registered")
+COST_KINDS = ("stamp_duty", "registration", "legal", "broker", "other")
+
+
+class PropertyDeal(Base):
+    """A property bought in parts: the agreed price, where and what it is, how far the purchase is,
+    the plan for the balance and the costs on top. Money paid is the investment account's ledger."""
+
+    __tablename__ = "property_deal"
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("account.id", ondelete="CASCADE", name="fk_property_deal_account_id_account"), primary_key=True
+    )
+    price: Mapped[int | None] = mapped_column(Integer)  # paise: the total agreed price
+    size: Mapped[str | None] = mapped_column(String(60))  # "2 guntha", "1,200 sq ft"
+    location: Mapped[str | None] = mapped_column(String(200))  # village / address
+    survey_no: Mapped[str | None] = mapped_column(String(60))  # survey / gat / plot number
+    seller: Mapped[str | None] = mapped_column(String(120))
+    agreement_date: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(24), default="agreement")
+    registered_on: Mapped[date | None] = mapped_column(Date)
+    goal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("piggy_bank.id", ondelete="SET NULL", name="fk_property_deal_goal_id_piggy_bank")
+    )
+
+    plan: Mapped[list["PropertyInstalment"]] = relationship(
+        lazy="selectin", cascade="all, delete-orphan", order_by="PropertyInstalment.due_date"
+    )
+    costs: Mapped[list["PropertyCost"]] = relationship(
+        lazy="selectin", cascade="all, delete-orphan", order_by="PropertyCost.date"
+    )
+
+
+class PropertyInstalment(Base):
+    """One planned payment of the balance. Paid or not is worked out from the money paid so far
+    (oldest instalment first), so a payment from any source counts."""
+
+    __tablename__ = "property_instalment"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "property_deal.account_id", ondelete="CASCADE", name="fk_property_instalment_account_id_property_deal"
+        ),
+        index=True,
+    )
+    due_date: Mapped[date] = mapped_column(Date)
+    amount: Mapped[int] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(String(120))  # "On registration"
+
+
+class PropertyCost(Base):
+    """Stamp duty, registration fee, lawyer, broker … — on top of the price. With `transaction_id` it
+    was paid through MoneyMap (a transfer into the property, so not part of the price paid)."""
+
+    __tablename__ = "property_cost"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("property_deal.account_id", ondelete="CASCADE", name="fk_property_cost_account_id_property_deal"),
+        index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(16))
+    amount: Mapped[int] = mapped_column(Integer)
+    date: Mapped[date] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(String(120))
+    transaction_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transaction.id", ondelete="SET NULL", name="fk_property_cost_transaction_id_transaction")
+    )
 
 
 class Fund(Base):

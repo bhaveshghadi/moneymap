@@ -12,6 +12,7 @@ from ..transactions.models import Transaction
 from ..transactions.schemas import TransactionIn
 from ..transactions.service import apply_body, txn_out
 from .models import FundTxn, Investment
+from .property import property_out
 from .schemas import (
     DueOut,
     FundOut,
@@ -131,13 +132,16 @@ def _dues(inv: Investment, v: Valued, today: date) -> list[DueOut]:
             overdue=d.date < today,
         )
         for d in v.dues
-        if d.date >= today or d.what in ("matures", "due_back")
+        if d.date >= today or d.what in ("matures", "due_back", "balance")
     ]
 
 
-def investment_out(inv: Investment, txns: list[Transaction], rates: Rates, today: date | None = None) -> InvestmentOut:
+def investment_out(
+    inv: Investment, txns: list[Transaction], rates: Rates, today: date | None = None, db: Session | None = None
+) -> InvestmentOut:
     today = today or date.today()
     v = valued(inv, txns, rates, today)
+    prop = property_out(db, inv, v, today) if inv.kind == "property" and not inv.closed_on else None
     dues = sorted(_dues(inv, v, today), key=lambda d: d.date)
     base = v.money_in or None
     if inv.kind == "chit" and inv.payout_on and inv.instalment and v.total_count:
@@ -185,6 +189,7 @@ def investment_out(inv: Investment, txns: list[Transaction], rates: Rates, today
         no_price=v.no_price,
         next_due=dues[0] if dues else None,
         fund=_fund_out(inv),
+        property=prop,
     )
 
 
@@ -208,7 +213,7 @@ def _fund_out(inv: Investment) -> FundOut | None:
 
 def detail_out(db: Session, inv: Investment) -> InvestmentDetail:
     txns = _txns(db, [inv.account_id])[inv.account_id]
-    out = investment_out(inv, txns, get_rates(db))
+    out = investment_out(inv, txns, get_rates(db), db=db)
     moves = sorted(txns, key=lambda t: (t.date, t.id), reverse=True)
     from .cas_service import KIND_LABEL as TXN_LABEL
 
@@ -230,6 +235,7 @@ def detail_out(db: Session, inv: Investment) -> InvestmentDetail:
         )
         for f in fts
     ]
+    db.commit()  # a property's balance goal follows the balance
     return InvestmentDetail(
         **out.model_dump(exclude={"fund"}), fund=out.fund, moves=[txn_out(t) for t in moves], fund_txns=fund_txns
     )
@@ -243,7 +249,8 @@ def all_investments(db: Session, today: date | None = None) -> list[InvestmentOu
     invs = _all(db)
     by = _txns(db, [i.account_id for i in invs])
     rates = get_rates(db)
-    out = [investment_out(i, by[i.account_id], rates, today) for i in invs]
+    out = [investment_out(i, by[i.account_id], rates, today, db) for i in invs]
+    db.commit()  # property balance goals updated on the way
     order = list(KIND_LABEL)
     return sorted(out, key=lambda x: (x.status == "closed", order.index(x.kind), x.name.lower()))
 
@@ -290,7 +297,9 @@ def bank_account(db: Session, account_id: int | None, label: str) -> Account:
     return a
 
 
-def move(db: Session, inv: Investment, direction: str, amount: int, on: date, bank: Account, desc: str | None) -> None:
+def move(
+    db: Session, inv: Investment, direction: str, amount: int, on: date, bank: Account, desc: str | None
+) -> Transaction:
     """A transfer bank -> investment (money in) or investment -> bank (money out)."""
     name = inv.account.name
     if not desc:
@@ -312,3 +321,4 @@ def move(db: Session, inv: Investment, direction: str, amount: int, on: date, ba
     apply_body(db, t, body, is_new=True)
     db.add(t)
     db.flush()
+    return t

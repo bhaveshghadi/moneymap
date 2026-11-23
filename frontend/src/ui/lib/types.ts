@@ -473,6 +473,7 @@ export interface GmailRun {
   date_from: string;
   date_to: string;
   queries: { label: string; provider_id: string | null; doc_type: string | null; query: string }[];
+  found: GmailFound[]; // every email found, to pick what to fetch
   matched_count: number;
   new_count: number;
   bytes_estimated: number;
@@ -641,7 +642,7 @@ export interface InvestmentDue {
   name: string;
   kind: InvestmentKind;
   date: string;
-  what: 'matures' | 'premium' | 'due_back' | 'instalment';
+  what: 'matures' | 'premium' | 'due_back' | 'instalment' | 'balance';
   amount: number;
   overdue: boolean;
 }
@@ -689,6 +690,7 @@ export interface Investment {
   no_price: boolean;
   next_due: InvestmentDue | null;
   fund: FundInfo | null; // mutual funds
+  property: PropertyPurchase | null; // property bought in parts
 }
 
 export interface FundInfo {
@@ -1028,4 +1030,59 @@ export interface Guide {
   finished: boolean;
   show_first: boolean;
   setup_page: boolean; // a new install: show the setup page first
+}
+
+// ---------------------------------------------------------------- property bought in parts
+
+export type PropertyStatus = 'booked' | 'agreement' | 'registration_pending' | 'registered';
+export type PropertyCostKind = 'stamp_duty' | 'registration' | 'legal' | 'broker' | 'other';
+
+export interface PropertyInstalment {
+  id: number;
+  due_date: string;
+  amount: number;
+  note: string | null;
+  paid: number;
+  status: 'paid' | 'part' | 'due' | 'overdue';
+}
+
+export interface PropertyCost {
+  id: number;
+  kind: PropertyCostKind;
+  amount: number;
+  date: string;
+  note: string | null;
+  transaction_id: number | null;
+}
+
+export interface PropertyPurchase {
+  price: number | null;
+  size: string | null;
+  location: string | null;
+  survey_no: string | null;
+  seller: string | null;
+  agreement_date: string | null;
+  status: PropertyStatus;
+  registered_on: string | null;
+  price_paid: number;
+  balance: number | null;
+  costs_total: number;
+  total_cost: number;
+  plan: PropertyInstalment[];
+  unplanned: number | null;
+  costs: PropertyCost[];
+  goal_id: number | null;
+  goal_saved: number | null;
+}
+
+export interface GmailFound {
+  id: string;
+  q: number; // index into the run's queries
+  from: string | null;
+  subject: string | null;
+  date: string | null; // ISO, minutes
+  size: number; // bytes
+  known: boolean; // already in the Inbox
+  last4: string | null; // account / card digits in the subject or preview
+  account: string | null; // your account or card with those digits
 }

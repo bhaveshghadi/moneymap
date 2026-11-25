@@ -14,6 +14,7 @@ import { ErrorState } from '../primitives/ErrorState';
 import { CategoryGlyph } from '../primitives/CategoryGlyph';
 import { CardForm, CycleBadge, networkLabel, ruleText, shortRange } from '../shared/CardForm';
 import { ConvertCardBillsNote } from '../shared/ConvertCardBills';
+import { PageHelp } from '../shared/PageHelp';
 
 /** Limit-used bar: amber above 30%, red above 75%. */
 export function UsageBar({ pct }: { pct: number }) {
@@ -48,7 +49,7 @@ export function CreditCardsPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Credit cards</h1>
+          <h1>Credit cards <PageHelp id="credit-cards" /></h1>
           <p>Spending on a card counts when you swipe; paying the bill is a transfer from your bank, not spending.</p>
         </div>
         <div className="actions">

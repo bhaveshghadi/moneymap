@@ -17,6 +17,7 @@ import { Icon } from '../primitives/Icon';
 import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { DrawerHead } from '../shared/DrawerHead';
 import { Progress } from '../shared/Progress';
+import { PageHelp } from '../shared/PageHelp';
 
 const MODE_LABEL: Record<BudgetMode, string> = {
   manual: 'Set by hand',
@@ -39,7 +40,7 @@ export function BudgetsPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Budgets</h1>
+          <h1>Budgets <PageHelp id="budgets" /></h1>
           <p>How much you plan to spend per budget each month, and how it&apos;s going.</p>
         </div>
         <div className="actions">

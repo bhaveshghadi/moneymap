@@ -25,6 +25,7 @@ import { SegmentedControl } from '../primitives/SegmentedControl';
 import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { DrawerHead } from '../shared/DrawerHead';
 import { CategoryOptions } from '../shared/CategoryOptions';
+import { PageHelp } from '../shared/PageHelp';
 
 // ---------------------------------------------------------------- vocabulary
 
@@ -144,7 +145,7 @@ export function RulesPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Rules</h1>
+          <h1>Rules <PageHelp id="rules" /></h1>
           <p>Set the category, tags or payee name automatically — on transactions you add, from the Inbox and on statement import.</p>
         </div>
         <div className="actions">

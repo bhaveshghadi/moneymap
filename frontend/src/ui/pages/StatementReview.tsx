@@ -18,6 +18,7 @@ import { useTxn } from '../contexts/TxnCtx';
 import type { Txn } from '../lib/types';
 import { CategoryOptions, kindFor } from '../shared/CategoryOptions';
 import { BackToSetup } from '../shared/BackToSetup';
+import { PageHelp } from '../shared/PageHelp';
 
 type Filter = 'all' | 'needs' | 'ready' | 'duplicate' | 'skipped' | 'imported';
 const FILTERS: { id: Filter; label: string; match: (s: StatementRowStatus) => boolean }[] = [
@@ -204,7 +205,7 @@ export function StatementReviewPage({ id }: { id: number }) {
       <BackToSetup step="statements" />
       <div className="page-head">
         <div style={{ minWidth: 0 }}>
-          <h1 style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Review statement</h1>
+          <h1>Review statement <PageHelp id="statement-review" /></h1>
           <p>
             {st.filename} · {st.doc_type === 'card_statement' ? 'Credit card statement' : 'Bank statement'}
             {st.account_last4 && <> · ending {st.account_last4}</>}

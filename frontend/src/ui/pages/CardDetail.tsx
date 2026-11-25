@@ -18,6 +18,7 @@ import { TxnRow } from '../shared/TxnRow';
 import { CardForm, CycleBadge, cycleText, networkLabel, shortRange } from '../shared/CardForm';
 import { UsageBar, payDefaults } from './CreditCards';
 import { EmiList } from '../shared/EmiList';
+import { PageHelp } from '../shared/PageHelp';
 
 function statementIn(iso: string): string {
   const n = daysUntil(iso);
@@ -225,7 +226,7 @@ export function CardDetailPage({ id }: { id: number }) {
             <div className="muted" style={{ fontSize: 12.5 }}>
               <Link href="/credit-cards">Credit cards</Link> /
             </div>
-            <h1 style={{ margin: 0 }}>{data.name}</h1>
+            <h1 style={{ margin: 0 }}>{data.name} <PageHelp id="card" /></h1>
             <p style={{ margin: 0 }}>
               {[data.bank, networkLabel(data.network), data.last4 ? `•••• ${data.last4}` : null].filter(Boolean).join(' · ')}
               {data.bank || data.network || data.last4 ? ' · ' : ''}

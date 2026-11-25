@@ -14,6 +14,7 @@ import { ErrorState } from '../primitives/ErrorState';
 import { Icon } from '../primitives/Icon';
 import { TxnRow } from '../shared/TxnRow';
 import { CategoryOptions } from '../shared/CategoryOptions';
+import { PageHelp } from '../shared/PageHelp';
 
 const PAGE = 50;
 const TYPES = [
@@ -190,7 +191,7 @@ export function TransactionsPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>{selectedAccount ? selectedAccount.name : 'Transactions'}</h1>
+          <h1>{selectedAccount ? selectedAccount.name : 'Transactions'} <PageHelp id="transactions" /></h1>
           <p>
             {page
               ? `${page.total.toLocaleString('en-IN')} transaction${page.total === 1 ? '' : 's'}`

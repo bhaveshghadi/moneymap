@@ -24,6 +24,7 @@ import { Icon } from '../primitives/Icon';
 import { CategoryGlyph } from '../primitives/CategoryGlyph';
 import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { DrawerHead } from '../shared/DrawerHead';
+import { PageHelp } from '../shared/PageHelp';
 
 export const RULES: { value: SavingsRule; label: string; hint: string }[] = [
   { value: '50_30_20', label: '50/30/20', hint: 'Needs 50% · wants 30% · savings 20% — the usual starting point' },
@@ -50,7 +51,7 @@ export function SavingsPlanPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Savings plan</h1>
+          <h1>Savings plan <PageHelp id="savings-plan" /></h1>
           <p>Where your income goes — needs, wants and savings — against the rule you pick.</p>
         </div>
         <div className="actions">

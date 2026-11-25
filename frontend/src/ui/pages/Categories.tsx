@@ -15,6 +15,7 @@ import { Icon } from '../primitives/Icon';
 import { CategoryGlyph, PALETTE } from '../primitives/CategoryGlyph';
 import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { DrawerHead } from '../shared/DrawerHead';
+import { PageHelp } from '../shared/PageHelp';
 
 const ICONS = [
   'shopping-basket',
@@ -93,7 +94,7 @@ export function CategoriesPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Categories &amp; tags</h1>
+          <h1>Categories &amp; tags <PageHelp id="categories" /></h1>
           <p>Categories say what money was for; tags group transactions across categories (a trip, a project).</p>
         </div>
         <div className="actions">

@@ -12,6 +12,7 @@ import { Icon } from '../primitives/Icon';
 import { Money } from '../primitives/Money';
 import { Skeleton } from '../primitives/Skeleton';
 import { BackToSetup } from '../shared/BackToSetup';
+import { PageHelp } from '../shared/PageHelp';
 
 const ACTION_LABEL: Record<CasAction, string> = {
   link: 'Already recorded — link it',
@@ -131,7 +132,7 @@ export function CasReviewPage({ id }: { id: number }) {
       <div className="page-head">
         <div style={{ minWidth: 0 }}>
           <div className="muted" style={{ fontSize: 12.5 }}><Link href="/investments">Investments</Link> /</div>
-          <h1>Mutual fund statement (CAS)</h1>
+          <h1>Mutual fund statement (CAS) <PageHelp id="cas-review" /></h1>
           <p>
             {c.filename}
             {c.period_from && c.period_to && <> · {fmtDate(c.period_from)} – {fmtDate(c.period_to)}</>}

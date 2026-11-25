@@ -11,6 +11,7 @@ import { Skeleton } from '../primitives/Skeleton';
 import { EmptyState } from '../primitives/EmptyState';
 import { ErrorState } from '../primitives/ErrorState';
 import { Icon } from '../primitives/Icon';
+import { PageHelp } from '../shared/PageHelp';
 
 export function StatementsPage() {
   const { data, error, reload } = useApi<StatementSummary[]>('/statements');
@@ -23,7 +24,7 @@ export function StatementsPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Statements</h1>
+          <h1>Statements <PageHelp id="statements" /></h1>
           <p>Statement PDFs you&apos;ve opened for import — upload one from your bank, or start from an email in the Inbox.</p>
         </div>
         <div className="actions">

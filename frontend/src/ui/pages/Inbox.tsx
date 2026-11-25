@@ -18,6 +18,7 @@ import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { DrawerHead } from '../shared/DrawerHead';
 import { TxnRow } from '../shared/TxnRow';
 import type { TxnDefaults } from '../shared/TxnForm';
+import { PageHelp } from '../shared/PageHelp';
 
 type Status = 'new' | 'handled' | 'ignored';
 const PAGE = 50;
@@ -101,7 +102,7 @@ export function InboxPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Inbox</h1>
+          <h1>Inbox <PageHelp id="inbox" /></h1>
           <p>Statement emails fetched from Gmail (and alerts, if you choose them). Record transactions from them, or ignore them.</p>
         </div>
         <div className="actions">

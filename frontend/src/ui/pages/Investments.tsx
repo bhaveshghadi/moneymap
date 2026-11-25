@@ -17,6 +17,7 @@ import { DrawerHead } from '../shared/DrawerHead';
 import { DUE_LABEL, InvestmentForm, KIND_META, KIND_ORDER, subtypeLabel } from '../shared/InvestmentForm';
 import { UploadStatement } from '../shared/UploadStatement';
 import { Icon } from '../primitives/Icon';
+import { PageHelp } from '../shared/PageHelp';
 
 /** "Matures in 20 days", "Premium due tomorrow", "Matured 3 days ago". */
 export function dueWhen(d: InvestmentDue): string {
@@ -59,7 +60,7 @@ export function InvestmentsPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Investments</h1>
+          <h1>Investments <PageHelp id="investments" /></h1>
           <p>What you own, what you put in, what it&apos;s worth today and what&apos;s coming up.</p>
         </div>
         <div className="actions">

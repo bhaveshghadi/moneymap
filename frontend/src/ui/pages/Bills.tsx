@@ -15,6 +15,7 @@ import { Icon } from '../primitives/Icon';
 import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { DrawerHead } from '../shared/DrawerHead';
 import { BillBadge } from '../shared/Progress';
+import { PageHelp } from '../shared/PageHelp';
 
 function AmountRange({ b }: { b: Pick<Bill, 'amount_min' | 'amount_max'> }) {
   if (b.amount_min === b.amount_max) return <Money amount={rs(b.amount_min)} interactive={false} />;
@@ -37,7 +38,7 @@ export function BillsPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Bills</h1>
+          <h1>Bills <PageHelp id="bills" /></h1>
           <p>Recurring bills you expect to pay. New expenses that match a bill are linked to it automatically.</p>
         </div>
         <div className="actions">

@@ -8,6 +8,7 @@ import { Icon } from '../primitives/Icon';
 import { ResetCard } from '../shared/ResetCard';
 import { GmailCard } from '../shared/GmailCard';
 import { useTheme, type ThemeChoice } from '../lib/theme';
+import { PageHelp } from '../shared/PageHelp';
 
 export function SettingsPage() {
   const { username } = useShell();
@@ -44,7 +45,7 @@ export function SettingsPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Settings</h1>
+          <h1>Settings <PageHelp id="settings" /></h1>
           <p>Signed in as {username}.</p>
         </div>
         <div className="actions">

@@ -14,6 +14,7 @@ import { EmptyState } from '../primitives/EmptyState';
 import { ErrorState } from '../primitives/ErrorState';
 import { CategoryGlyph } from '../primitives/CategoryGlyph';
 import { AccountForm } from '../shared/AccountForm';
+import { PageHelp } from '../shared/PageHelp';
 
 type TabId = 'own' | 'expense' | 'revenue';
 
@@ -62,7 +63,7 @@ export function AccountsPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Accounts</h1>
+          <h1>Accounts <PageHelp id="accounts" /></h1>
           <p>Where your money sits, and who you pay or get paid by.</p>
         </div>
         <div className="actions">

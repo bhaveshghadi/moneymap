@@ -16,6 +16,7 @@ import { CategoryGlyph } from '../primitives/CategoryGlyph';
 import { Progress } from '../shared/Progress';
 import { LoanForm, kindLabel } from '../shared/LoanForm';
 import { LoanStatementDialog } from '../shared/LoanStatement';
+import { PageHelp } from '../shared/PageHelp';
 
 export function LoansPage() {
   const { data, error, reload } = useApi<Loan[]>('/loans');
@@ -46,7 +47,7 @@ export function LoansPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Loans</h1>
+          <h1>Loans <PageHelp id="loans" /></h1>
           <p>What&apos;s left on each loan, the next EMI, and the full repayment schedule.</p>
         </div>
         <div className="actions">

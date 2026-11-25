@@ -20,6 +20,7 @@ import { COUNT_LABEL, FIRST_INTEREST_LABEL, LOAN_KINDS, METHOD_LABEL, kindLabel 
 import { LoanChangesList, PrepayDialog, RateDialog } from '../shared/LoanChanges';
 import { LoanStatementDialog } from '../shared/LoanStatement';
 import { SegmentedControl } from '../primitives/SegmentedControl';
+import { PageHelp } from '../shared/PageHelp';
 
 export function LoanDetailPage({ id }: { id: number }) {
   const { data, error, reload } = useApi<LoanDetail>(`/loans/${id}`);
@@ -72,7 +73,7 @@ export function LoanDetailPage({ id }: { id: number }) {
           <CategoryGlyph icon="hand-coins" color="coral" size={46} />
           <div style={{ minWidth: 0 }}>
             <div className="muted" style={{ fontSize: 12.5 }}><Link href="/loans">Loans</Link> /</div>
-            <h1 style={{ margin: 0 }}>{l.name}</h1>
+            <h1 style={{ margin: 0 }}>{l.name} <PageHelp id="loan" /></h1>
             <p style={{ margin: 0 }}>
               {[kindLabel(l.kind), l.lender, l.loan_number ? `No. ${l.loan_number}` : null].filter(Boolean).join(' · ')}
             </p>

@@ -350,3 +350,25 @@ select.inp { appearance: auto; }
 .gm-subject { font-size: 13.5px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }  /* the whole subject, wrapped */
 .gm-meta { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
 .gm-acct { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--indigo-600); margin: 2px 0; }
+
+/* Guide: common questions */
+.guide-faq details { border-top: 1px solid var(--border); }
+.guide-faq details:first-child { border-top: 0; }
+.guide-faq summary { padding: 14px 18px; cursor: pointer; font-weight: 600; font-size: 14px; line-height: 1.45; }
+.guide-faq summary:hover { background: var(--bg-subtle); }
+.guide-faq-a { padding: 0 18px 16px; font-size: 13.5px; line-height: 1.6; color: var(--fg-2); }
+.guide-faq-a ul, .guide-faq-a ol { margin: 8px 0; padding-left: 20px; }
+.guide-faq-a li { margin-bottom: 6px; }
+
+/* the ⓘ next to each page title: what the section is for and how to use it */
+.page-help { position: relative; display: inline-flex; vertical-align: middle; margin-left: 6px; font-family: var(--font-text); font-weight: 400; letter-spacing: 0; }
+.page-help-btn { border: 0; background: transparent; color: var(--fg-3); padding: 4px; border-radius: 50%; cursor: pointer; display: inline-flex; line-height: 0; }
+.page-help-btn:hover, .page-help-btn[aria-expanded="true"] { color: var(--brand); background: var(--brand-subtle); }
+.page-help-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.page-help-pop { position: absolute; top: calc(100% + 6px); left: -8px; z-index: 40; width: min(360px, calc(100vw - 32px)); display: block; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 14px 16px; font-size: 13px; line-height: 1.55; color: var(--fg-2); text-transform: none; white-space: normal; }
+.page-help-what { display: block; color: var(--fg-1); font-size: 13.5px; font-weight: 500; }
+.page-help-how { display: block; margin-top: 10px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-3); }
+.page-help-pop ul { margin: 4px 0 0; padding-left: 18px; }
+.page-help-pop li { margin-bottom: 4px; }
+.page-help-more { display: inline-block; margin-top: 8px; font-size: 12.5px; font-weight: 600; }
+@media (max-width: 760px) { h1:has(.page-help) { position: relative; } .page-help { position: static; } .page-help-pop { left: 0; right: 0; width: auto; top: calc(100% + 6px); } }

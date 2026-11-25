@@ -22,6 +22,7 @@ import { EmergencyBadge, coverText } from '../shared/EmergencyFundCard';
 import { CycleBadge } from '../shared/CardForm';
 import { KIND_META } from '../shared/InvestmentForm';
 import { GainText, dueWhen } from './Investments';
+import { PageHelp } from '../shared/PageHelp';
 
 function Row({ href, glyph, title, sub, right }: { href: string; glyph: ReactNode; title: ReactNode; sub: ReactNode; right: ReactNode }) {
   return (
@@ -67,7 +68,7 @@ export function OverviewPage() {
   const head = (
     <div className="page-head">
       <div>
-        <h1>Overview</h1>
+        <h1>Overview <PageHelp id="overview" /></h1>
         <p>Balances right now, and how {monthLabel(month)} is going.</p>
       </div>
       <div className="actions">

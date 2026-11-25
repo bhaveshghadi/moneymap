@@ -16,6 +16,7 @@ import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { DrawerHead } from '../shared/DrawerHead';
 import { Progress } from '../shared/Progress';
 import { EmergencyFundCard } from '../shared/EmergencyFundCard';
+import { PageHelp } from '../shared/PageHelp';
 
 export function PiggyBanksPage() {
   const { data, error, reload } = useApi<Piggy[]>('/piggy-banks');
@@ -31,7 +32,7 @@ export function PiggyBanksPage() {
     <div className="content-wrap fade-in">
       <div className="page-head">
         <div>
-          <h1>Piggy banks</h1>
+          <h1>Piggy banks <PageHelp id="piggy-banks" /></h1>
           <p>Savings goals. Money you set aside stays in its account; it&apos;s just earmarked for the goal.</p>
         </div>
         <div className="actions">

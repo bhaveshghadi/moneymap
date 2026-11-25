@@ -20,6 +20,7 @@ import { TxnRow } from '../shared/TxnRow';
 import { COMPOUNDING_LABEL, FREQUENCY_LABEL, InvestmentForm, KIND_META, subtypeLabel } from '../shared/InvestmentForm';
 import { GainText, RatesDialog, dueWhen } from './Investments';
 import { PropertySection } from '../shared/PropertyPurchase';
+import { PageHelp } from '../shared/PageHelp';
 
 type Dlg = null | 'edit' | 'in' | 'out' | 'value' | 'close' | 'rates' | 'link';
 
@@ -107,7 +108,7 @@ export function InvestmentDetailPage({ id }: { id: number }) {
           <CategoryGlyph icon={meta.icon} color={meta.color} size={46} />
           <div style={{ minWidth: 0 }}>
             <div className="muted" style={{ fontSize: 12.5 }}><Link href="/investments">Investments</Link> /</div>
-            <h1 style={{ margin: 0 }}>{i.name}</h1>
+            <h1 style={{ margin: 0 }}>{i.name} <PageHelp id="investment" /></h1>
             <p style={{ margin: 0 }}>{[meta.label, subtypeLabel(i.kind, i.subtype), i.person, i.institution].filter(Boolean).join(' · ')}</p>
           </div>
         </div>

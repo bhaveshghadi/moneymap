@@ -210,6 +210,137 @@ function PrepayBody({ loan }: { loan: LoanDetail }) {
   );
 }
 
+export function CloseDialog({ loan, onClose }: { loan: LoanDetail; onClose: () => void }) {
+  return (
+    <Dialog onClose={onClose} label="Close the loan" width={560}>
+      <CloseBody loan={loan} />
+    </Dialog>
+  );
+}
+
+function CloseBody({ loan }: { loan: LoanDetail }) {
+  const close = useDialogClose();
+  const { bump } = useShell();
+  const banks = useApi<Account[]>('/accounts?type=asset&type=cash&include_inactive=false');
+  // the payment may already be in: an expense from the EMI account, or a transfer to this loan — bigger than an EMI
+  const spent = useApi<TxnPage>(loan.pay_from_id ? `/transactions${qs({ account_id: loan.pay_from_id, type: 'withdrawal', limit: 200 })}` : null);
+  const toLoan = useApi<TxnPage>(`/transactions${qs({ account_id: loan.id, type: 'transfer', limit: 200 })}`);
+  const [f, setF] = useState({ amount: '', date: todayIso(), from: loan.pay_from_id ? String(loan.pay_from_id) : '', existing: '' });
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
+  const options = [
+    ...(spent.data?.items ?? []),
+    ...(toLoan.data?.items ?? []).filter((t) => t.destination.id === loan.id && t.source.id !== loan.id),
+  ]
+    .filter((t) => t.amount > loan.current_emi)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const payoff = useApi<{ date: string; left: number }>(f.date ? `/loans/${loan.id}/payoff${qs({ on: f.date })}` : null);
+  const left = payoff.data?.date === f.date ? payoff.data.left : null;
+  const amount = toPaise(f.amount);
+  const extra = left !== null && amount !== null ? amount - left : null;
+
+  const pickExisting = (id: string) => {
+    const t = options.find((x) => String(x.id) === id);
+    setF((p) => ({ ...p, existing: id, amount: t ? String(t.amount / 100) : p.amount, date: t ? t.date : p.date }));
+  };
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!amount || amount <= 0) return setError('Enter the amount you paid to close the loan.');
+    if (!f.existing && !f.from) return setError('Choose the account you paid from.');
+    setSaving(true);
+    try {
+      await api(`/loans/${loan.id}/close`, {
+        method: 'POST',
+        body: { date: f.date, amount, from_account_id: f.from ? Number(f.from) : null, transaction_id: f.existing ? Number(f.existing) : null },
+      });
+      bump();
+      close();
+    } catch (err) {
+      setError((err as Error).message);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} style={{ display: 'contents' }}>
+      <DrawerHead title="Close the loan" sub={`${loan.name} · paid off early`} lead={<span className="ico" style={{ background: 'var(--mint-50)', color: 'var(--mint-700)' }}><Icon name="circle-check" size={20} /></span>} />
+      <div className="drawer-body">
+        {error && <div className="form-error" role="alert">{error}</div>}
+        <p className="muted" style={{ marginTop: 0, fontSize: 13.5 }}>
+          You paid the lender everything left in one go (foreclosure). MoneyMap clears what was left on that day and ends the loan there.
+        </p>
+        {options.length > 0 && (
+          <div className="field">
+            <label htmlFor="cl-ex">Already in your transactions?</label>
+            <select id="cl-ex" className="inp" value={f.existing} onChange={(e) => pickExisting(e.target.value)}>
+              <option value="">No — record the payment now</option>
+              {options.map((t) => (
+                <option key={t.id} value={t.id}>{fmtDate(t.date)} · {t.description.slice(0, 50)} · ₹{(t.amount / 100).toLocaleString('en-IN')}</option>
+              ))}
+            </select>
+            <div className="hint">E.g. a “Payment against loan” row from your bank statement — it becomes this payment instead of a second one.</div>
+          </div>
+        )}
+        <div className="row2">
+          <div className="field">
+            <label htmlFor="cl-amt">Paid in all (₹)</label>
+            <input id="cl-amt" className="inp" inputMode="decimal" value={f.amount} onChange={(e) => set('amount', e.target.value)} disabled={!!f.existing} placeholder="e.g. 163234" />
+          </div>
+          <div className="field">
+            <label htmlFor="cl-date">Paid on</label>
+            <input id="cl-date" className="inp" type="date" value={f.date} onChange={(e) => set('date', e.target.value)} disabled={!!f.existing} />
+          </div>
+        </div>
+        {!f.existing && (
+          <div className="field">
+            <label htmlFor="cl-from">Paid from</label>
+            <select id="cl-from" className="inp" value={f.from} onChange={(e) => set('from', e.target.value)}>
+              <option value="">Choose an account…</option>
+              {(banks.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        )}
+        {payoff.error && <div className="note warn"><span>{payoff.error}</span></div>}
+        {left !== null && (
+          <div className="card card-pad" style={{ background: 'var(--bg-subtle)', fontSize: 13.5 }} aria-live="polite">
+            <div>
+              Left to repay on {fmtDate(f.date)}: <b><Money amount={rs(left)} interactive={false} /></b>
+              <span className="muted"> (after the EMIs due by then)</span>
+            </div>
+            {extra !== null && extra < 0 && (
+              <div style={{ marginTop: 6, color: 'var(--red-700)' }}>That&apos;s less than what was left — record it as a part-payment instead.</div>
+            )}
+            {extra !== null && extra >= 0 && (
+              <div style={{ marginTop: 6 }}>
+                {extra === 0 ? (
+                  'It clears exactly what was left.'
+                ) : loan.count_mode === 'interest_only' ? (
+                  <>
+                    The extra <b><Money amount={rs(extra)} interactive={false} /></b>{' '}is the lender&apos;s closing charges and interest for the days
+                    since the last EMI: it&apos;s recorded as spending (“Loan Interest”).
+                  </>
+                ) : (
+                  <>
+                    Includes <b><Money amount={rs(extra)} interactive={false} /></b>{' '}of closing charges and interest. This loan counts whole EMIs
+                    as spending, so the payment does too (“Loan / EMI”).
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="drawer-foot">
+        <span className="spacer" />
+        <Button variant="secondary" onClick={close}>Cancel</Button>
+        <Button variant="primary" type="submit" icon="circle-check" disabled={saving || (extra !== null && extra < 0)}>{saving ? 'Saving…' : 'Close the loan'}</Button>
+      </div>
+    </form>
+  );
+}
+
 export function RateDialog({ loan, onClose }: { loan: LoanDetail; onClose: () => void }) {
   return (
     <Dialog onClose={onClose} label="Interest rate change" width={540}>
@@ -302,20 +433,24 @@ export function LoanChangesList({ loan }: { loan: LoanDetail }) {
       {error && <div className="form-error" role="alert">{error}</div>}
       {[...loan.events].reverse().map((ev) => (
         <div key={ev.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13.5, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-          <Icon name={ev.kind === 'prepay' ? 'piggy-bank' : 'percent'} size={16} />
+          <Icon name={ev.mode === 'close' ? 'circle-check' : ev.kind === 'prepay' ? 'piggy-bank' : 'percent'} size={16} />
           <span style={{ flex: 1, minWidth: 200 }}>
             <b>{fmtDate(ev.date)}</b> ·{' '}
-            {ev.kind === 'prepay' ? (
+            {ev.mode === 'close' ? (
+              <><b>loan closed</b> — paid off what was left, <Money amount={rs(ev.amount ?? 0)} interactive={false} /></>
+            ) : ev.kind === 'prepay' ? (
               <>part-payment <Money amount={rs(ev.amount ?? 0)} interactive={false} /></>
             ) : (
               <>rate changed to <b>{ev.rate}%</b></>
             )}
-            <span className="muted">
-              {' '}· {MODE_LABEL[ev.mode as Mode].toLowerCase()}
-              {ev.emi_after ? <> · EMI from then <Money amount={rs(ev.emi_after)} interactive={false} /></> : null}
-            </span>
+            {ev.mode !== 'close' && (
+              <span className="muted">
+                {' '}· {MODE_LABEL[ev.mode as Mode].toLowerCase()}
+                {ev.emi_after ? <> · EMI from then <Money amount={rs(ev.emi_after)} interactive={false} /></> : null}
+              </span>
+            )}
           </span>
-          <Button variant="ghost" size="sm" onClick={() => act(ev, 'switch')}>Switch</Button>
+          {ev.mode !== 'close' && <Button variant="ghost" size="sm" onClick={() => act(ev, 'switch')}>Switch</Button>}
           <Button variant={confirm === ev.id ? 'primary' : 'ghost'} size="sm" icon="trash-2" className={confirm === ev.id ? 'btn-danger' : ''} onClick={() => act(ev, 'remove')}>
             {confirm === ev.id ? 'Confirm remove' : 'Remove'}
           </Button>

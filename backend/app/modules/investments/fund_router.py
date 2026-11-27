@@ -10,12 +10,14 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ...core.once import one_at_a_time
 from ...db import get_db
 from ..accounts.models import Account
 from ..auth.security import current_user
 from ..gmail.models import GmailAttachment
 from ..transactions.models import Transaction
 from ..transactions.service import txn_out
+from .cas import is_summary
 from .cas_service import KIND_LABEL, already_invested, bad, bank_accounts, do_import, refresh, revive
 from .models import CasImport, Fund, Investment
 from .nav import get_status, search_schemes, update_navs
@@ -96,6 +98,7 @@ class CasOut(BaseModel):
     rows: list[CasRowOut]
     unparsed: list[str]
     counts: dict[str, int]
+    summary: bool  # a summary CAS: holdings only, no transactions
 
 
 class CasSummary(BaseModel):
@@ -206,6 +209,7 @@ def _cas_out(db: Session, cas: CasImport) -> CasOut:
         created_at=cas.created_at,
         imported_at=cas.imported_at,
         gmail_message_id=att.message_id if att else None,
+        summary=is_summary(cas.text),
         funds=[
             CasFundOut(
                 id=f.id,
@@ -318,6 +322,8 @@ def set_fund_mode(cid: int, fid: int, body: CasFundMode, db: Session = Depends(g
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Fund not found")
     if body.mode == "txns" and (f.skip or f.account_id is None or db.get(Fund, f.account_id) is None):
         raise bad("“Transactions only” adds rows to a fund you already have — pick it under “Goes to” first.")
+    if body.mode != "fund" and is_summary(cas.text):
+        raise bad("This is a summary CAS: it has no transactions, so its funds come in as “Fund only”.")
     f.mode = body.mode
     if f.skip:
         f.skip = False
@@ -367,6 +373,7 @@ def bulk(cid: int, body: CasBulkIn, db: Session = Depends(get_db)) -> CasOut:
 
 
 @router.post("/cas/{cid}/import")
+@one_at_a_time("cas-import")
 def import_cas(cid: int, db: Session = Depends(get_db)) -> dict:
     cas = _get(db, cid)
     result = do_import(db, cas)

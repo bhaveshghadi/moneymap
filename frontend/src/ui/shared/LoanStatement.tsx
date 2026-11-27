@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Account, Loan, LoanFirstInterest, LoanMethod, LoanStatementDiff, LoanStatementEvent, LoanStatementResult } from '../lib/types';
+import type { Account, Loan, LoanFirstInterest, LoanInterestBasis, LoanMethod, LoanStatementDiff, LoanStatementEvent, LoanStatementResult } from '../lib/types';
 import { api, ApiError } from '../lib/api';
 import { fmtDate, rs } from '../lib/format';
 import { useApi, useShell } from '../contexts/ShellCtx';
@@ -12,7 +12,7 @@ import { CategoryGlyph } from '../primitives/CategoryGlyph';
 import { Icon } from '../primitives/Icon';
 import { Money } from '../primitives/Money';
 import { DrawerHead } from './DrawerHead';
-import { FIRST_INTEREST_LABEL, LoanFormBody, METHOD_LABEL, kindLabel } from './LoanForm';
+import { FIRST_INTEREST_LABEL, INTEREST_BASIS_LABEL, LoanFormBody, METHOD_LABEL, kindLabel } from './LoanForm';
 import { useStay } from '../contexts/StayCtx';
 
 const MAX_MB = 15;
@@ -445,6 +445,8 @@ function DiffValue({ d, v }: { d: LoanStatementDiff; v: string | number | null }
       return <>{kindLabel(String(v))}</>;
     case 'first_interest':
       return <>{FIRST_INTEREST_LABEL[v as LoanFirstInterest] ?? String(v)}</>;
+    case 'interest_basis':
+      return <>{INTEREST_BASIS_LABEL[v as LoanInterestBasis] ?? String(v)}</>;
     case 'method':
       return <>{METHOD_LABEL[v as LoanMethod] ?? String(v)}</>;
     default:

@@ -11,6 +11,11 @@ Detailed CAS layout (per fund):
     Closing Unit Balance: 75.449   NAV on 10-Nov-2026: INR 125.5000   Total Cost Value: 7,799.50
     Market Value on 10-Nov-2026: INR 9,468.85
 
+Summary CAS ("Consolidated Account Summary": holdings only, no transactions), one row per fund,
+the scheme name wrapping onto the next lines:
+    1234567/89 INF000A01AB1 P1234 - Some Equity Fund   50,000.000   1,000.000 31-Jul-2026   55.10   55,100.00   CAMS
+    Growth (Non-Demat)
+
 Amounts are integer paise, units integer milli-units (3 decimals), NAV in
 1/10000 rupee (4 decimals). Money sign is from the fund's side: + money into
 the fund (purchase), − money out (redemption).
@@ -36,6 +41,14 @@ COST_RE = re.compile(r"Total\s+Cost\s+Value\s*:\s*(" + NUM + ")", re.I)
 MARKET_RE = re.compile(rf"Market\s+Value\s+on\s+({DATE})\s*:\s*INR\s*({NUM})", re.I)
 PERIOD_RE = re.compile(rf"({DATE})\s+(?:To|-)\s+({DATE})", re.I)
 CAS_RE = re.compile(r"consolidated\s+account\s+statement", re.I)
+SUMMARY_RE = re.compile(r"consolidated\s+account\s+summary", re.I)
+AS_ON_RE = re.compile(rf"As\s+on\s+({DATE})", re.I)
+HOLDING_RE = re.compile(
+    rf"^([A-Za-z0-9/-]+?)\s*(IN[A-Z0-9]{{10}})\s+(.+?)\s+({NUM})\s+({NUM})\s+({DATE})\s+({NUM})\s+({NUM})"
+    r"\s*(CAMS|KFINTECH|KARVY|KFIN)?\s*$",
+    re.I,
+)
+SCHEME_CODE_RE = re.compile(r"^[A-Z0-9]{1,12}\s*-\s*")
 
 
 @dataclass
@@ -72,11 +85,65 @@ class CasStatement:
     period_to: date | None
     funds: list[CasFund] = field(default_factory=list)
     unparsed: list[str] = field(default_factory=list)
+    summary: bool = False  # a "Consolidated Account Summary": today's holdings, no transactions
 
 
 def is_cas(text: str) -> bool:
     head = text[:3000]
-    return bool(CAS_RE.search(head)) and bool(re.search(r"folio", text, re.I))
+    return bool(CAS_RE.search(head) or SUMMARY_RE.search(head)) and bool(re.search(r"folio", text, re.I))
+
+
+def is_summary(text: str) -> bool:
+    """The summary CAS (holdings only), not the detailed one with transactions."""
+    head = text[:3000]
+    return bool(SUMMARY_RE.search(head)) and not CAS_RE.search(head)
+
+
+def parse_summary(text: str) -> CasStatement:
+    """Each fund's holding: folio, ISIN, cost, units, NAV and value on the day."""
+    as_on = AS_ON_RE.search(text[:3000])
+    st = CasStatement(None, _date(as_on.group(1)) if as_on else None, summary=True)
+    lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in text.replace("\r", "").split("\n")]
+    lines = [ln for ln in lines if ln]
+    fund: CasFund | None = None
+    wrapped = 0
+    for ln in lines:
+        if m := HOLDING_RE.match(ln):
+            folio, isin, name, cost, units, nav_date, nav, value, reg = m.groups()
+            fund = CasFund(
+                amc="",
+                folio=re.sub(r"\s+", "", folio),
+                scheme=SCHEME_CODE_RE.sub("", name).strip(" :"),
+                isin=isin.upper(),
+                registrar=("KFINTECH" if reg.upper().startswith("K") else reg.upper()) if reg else None,
+                closing_units=_num(units, 1000),
+                nav=_num(nav, 10000),
+                nav_date=_date(nav_date),
+                cost=_num(cost, 100),
+                market_value=_num(value, 100),
+            )
+            st.funds.append(fund)
+            wrapped = 0
+            continue
+        if fund is None:
+            continue
+        # the scheme name goes on over the next lines, up to "(Non-Demat)" / "(Demat)"
+        stop = (
+            wrapped >= 3
+            or re.match(r"^total\b", ln, re.I)
+            or SUMMARY_RE.search(ln)
+            or re.search(r"folio\s*no|page\s+\d", ln, re.I)
+            or re.search(rf"{NUM}|{DATE}", ln)
+            or re.search(r"\(\s*(non[\s-]*)?demat\s*\)\s*$", fund.scheme, re.I)
+        )
+        if stop:
+            fund = None
+            continue
+        fund.scheme = f"{fund.scheme} {ln}".replace("( ", "(").replace(" )", ")")
+        wrapped += 1
+    for f in st.funds:
+        f.scheme = re.sub(r"\s*\(\s*(non[\s-]*)?demat\s*\)\s*$", "", f.scheme, flags=re.I).strip()[:255]
+    return st
 
 
 def _num(s: str, scale: int) -> int:
@@ -151,6 +218,8 @@ def _join_wrapped(lines: list[str]) -> list[str]:
 
 
 def parse_cas(text: str) -> CasStatement:
+    if is_summary(text):
+        return parse_summary(text)
     lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in text.replace("\r", "").split("\n")]
     lines = _join_wrapped([ln for ln in lines if ln])
     period = PERIOD_RE.search(text[:3000])

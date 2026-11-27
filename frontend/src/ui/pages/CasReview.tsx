@@ -13,6 +13,7 @@ import { Money } from '../primitives/Money';
 import { Skeleton } from '../primitives/Skeleton';
 import { BackToSetup } from '../shared/BackToSetup';
 import { PageHelp } from '../shared/PageHelp';
+import { GetCasDialog } from '../shared/GetCas';
 
 const ACTION_LABEL: Record<CasAction, string> = {
   link: 'Already recorded — link it',
@@ -56,6 +57,7 @@ export function CasReviewPage({ id }: { id: number }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [bulkBank, setBulkBank] = useState('');
+  const [gettingCas, setGettingCas] = useState(false);
   const c = cas && cas.id === data?.id ? cas : data;
 
   const banks = accounts.data ?? [];
@@ -136,6 +138,7 @@ export function CasReviewPage({ id }: { id: number }) {
           <p>
             {c.filename}
             {c.period_from && c.period_to && <> · {fmtDate(c.period_from)} – {fmtDate(c.period_to)}</>}
+            {c.summary && c.period_to && <> · holdings as on {fmtDate(c.period_to)}</>}
             {c.gmail_message_id && <> · <Link href={`/inbox?open=${encodeURIComponent(c.gmail_message_id)}`}>source email</Link></>}
           </p>
         </div>
@@ -174,6 +177,18 @@ export function CasReviewPage({ id }: { id: number }) {
           <span>No funds could be read from this PDF. Ask for a <b>detailed</b> CAS (with transactions) from CAMS or KFintech.</span>
         </div>
       )}
+      {c.summary && (
+        <div className="note info" style={{ marginBottom: 14 }}>
+          <Icon name="info" size={15} />
+          <span>
+            This is a <b>summary</b> CAS: it lists what you hold today, with no transactions. Each fund comes in with its units, price and what you
+            paid (counted as already invested), so your net worth is right. For your SIPs and redemptions, ask CAMS for a <b>Detailed</b>{' '}CAS
+            and import it later — it joins these same funds and replaces the &quot;already invested&quot; amount, so nothing is counted twice.{' '}
+            <button type="button" className="link-btn" onClick={() => setGettingCas(true)}><b>How to get a detailed CAS</b></button>
+          </span>
+        </div>
+      )}
+      {gettingCas && <GetCasDialog onClose={() => setGettingCas(false)} />}
       {(c.counts.existing ?? 0) > 0 && (
         <div className="note info" style={{ marginBottom: 14 }}>
           <Icon name="copy-check" size={15} />
@@ -196,15 +211,24 @@ export function CasReviewPage({ id }: { id: number }) {
               >
                 <option value="">Set all to…</option>
                 {(Object.keys(CHOICE_LABEL) as FundChoice[]).map((k) => (
-                  <option key={k} value={k}>{CHOICE_LABEL[k]}{k === 'txns' ? ' (funds you have)' : ''}</option>
+                  <option key={k} value={k} disabled={c.summary && (k === 'both' || k === 'txns')}>
+                    {CHOICE_LABEL[k]}{k === 'txns' && !c.summary ? ' (funds you have)' : ''}
+                  </option>
                 ))}
               </select>
             )}
           </div>
+          {c.summary ? (
           <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
-            For each fund choose what to bring in: the fund with its transactions, the <b>fund only</b> (today&apos;s units and value, no history),
+            A summary CAS has no transactions, so each fund comes in as <b>fund only</b>{' '}(today&apos;s units and value), or leave it out. A fund you
+            already have is joined, never added twice.
+          </p>
+          ) : (
+          <p className="muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
+            For each fund choose what to bring in: the fund with its transactions, the <b>fund only</b>{' '}(today&apos;s units and value, no history),
             or the <b>transactions only</b> into a fund you already have. A fund you already have is joined, never added twice.
           </p>
+          )}
           <div className="tbl-wrap">
             <table className="tbl" style={{ fontSize: 13 }}>
               <thead>
@@ -223,8 +247,9 @@ export function CasReviewPage({ id }: { id: number }) {
                         aria-label={`What to import for ${f.scheme}`}
                       >
                         {(Object.keys(CHOICE_LABEL) as FundChoice[]).map((k) => (
-                          <option key={k} value={k} disabled={k === 'txns' && !canTxns(f)}>
-                            {CHOICE_LABEL[k]}{k === 'txns' && !canTxns(f) ? ' (pick your fund under Goes to)' : ''}
+                          <option key={k} value={k} disabled={c.summary ? k === 'both' || k === 'txns' : k === 'txns' && !canTxns(f)}>
+                            {CHOICE_LABEL[k]}
+                            {c.summary && (k === 'both' || k === 'txns') ? ' (needs a detailed CAS)' : k === 'txns' && !canTxns(f) ? ' (pick your fund under Goes to)' : ''}
                           </option>
                         ))}
                       </select>
@@ -234,12 +259,12 @@ export function CasReviewPage({ id }: { id: number }) {
                         {f.scheme}
                         {f.closing_units === 0 && <span className="badge neutral" style={{ marginLeft: 6 }}>No units left</span>}
                       </div>
-                      <div className="muted" style={{ fontSize: 12 }}>{[f.amc, f.folio && `Folio ${f.folio}`, f.isin].filter(Boolean).join(' · ')} · {f.rows} rows</div>
+                      <div className="muted" style={{ fontSize: 12 }}>{[f.amc, f.folio && `Folio ${f.folio}`, f.isin].filter(Boolean).join(' · ')}{c.summary ? '' : ` · ${f.rows} rows`}</div>
                       {!f.skip && f.mode === 'fund' && (
                         <div style={{ fontSize: 12, color: 'var(--fg-3)', marginTop: 3 }}>
                           Fund only: today&apos;s {f.closing_units !== null ? `${fmtUnits(f.closing_units)} units` : 'units'} and value
-                          {f.cost !== null && <>; what you paid, <Money amount={rs(f.cost)} interactive={false} />, counts as already invested</>}. Its {f.rows}{' '}
-                          transactions and their bank payments aren&apos;t imported.
+                          {f.cost !== null && <>; what you paid, <Money amount={rs(f.cost)} interactive={false} />, counts as already invested</>}.
+                          {!c.summary && <> Its {f.rows} transactions and their bank payments aren&apos;t imported.</>}
                         </div>
                       )}
                       {!f.skip && f.mode === 'txns' && (

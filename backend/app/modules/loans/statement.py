@@ -15,7 +15,7 @@ from datetime import date, timedelta
 from statistics import median
 
 from ..statements.card_summary import DATE_TOKEN, parse_date
-from .maths import calc_emi, first_emi_interest, implied_rate_bp, month_interest, schedule_for
+from .maths import calc_emi, first_emi_interest, implied_rate_bp, month_interest, period_interest, schedule_for
 
 RUPEE = 100  # paise
 
@@ -515,10 +515,100 @@ def parse_loan_statement(text: str, lenders: list[str] | None = None, today: dat
         st.values["lender"] = who
         st.from_labels.add("lender")
     st.schedule = read_schedule(lines)
+    if not st.schedule:  # a two-lines-per-EMI ledger (Bandhan); other layouts never get here
+        st.schedule = read_ledger_schedule(lines)
+        if st.schedule:
+            _ledger_extras(st, text)
     st.found, st.receipts = read_entries(lines)
     _work_out(st, today or date.today())
     _emi_check(st, text)
     return st
+
+
+# ------------------------------------------------------------------ ledger-style schedule
+# Some lenders (e.g. Bandhan) list each EMI as two lines on the same date: the repayment of the
+# whole EMI (the balance falls by it), then the month's interest added to the balance:
+#   01/02/23  Repayment of loan              12719  12719  586409
+#   01/02/23  Debit - Capitalize Def Int      4783   4783  591192
+# Read only when the usual reader finds no schedule, so other layouts are untouched.
+
+LEDGER_LINE_RE = re.compile(r"^\s*(" + DATE_TOKEN.pattern[1:-1] + r")\s+(.*)$", re.I)
+LEDGER_NUM_RE = re.compile(r"-?\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|-?\d+(?:\.\d{1,2})?")
+LEDGER_PAY_RE = re.compile(r"repayment|payoff|pay\s*off|\bemi\b|instal?l?ment\s*(?:paid|received|collected)", re.I)
+LEDGER_INT_RE = re.compile(r"interest|\bint\b|capitali[sz]", re.I)
+ACCOUNT_NO_RE = re.compile(r"account\s*(?:number|no\.?)\s*[:.-]?\s*([0-9]{6,20})\b", re.I)
+REQUESTED_RE = re.compile(
+    r"(?:amount\s*requested|loan\s*amount|amount\s*financed)\s*[:.-]?\s*(?:rs\.?|inr|₹)?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)",
+    re.I,
+)
+
+
+def _ledger_rows(lines: list[str]) -> list[tuple[date, str, int, int | None]]:
+    """(date, what, amount, balance after) for dated lines with an activity: what = pay | int | open."""
+    out = []
+    for raw in lines:
+        m = LEDGER_LINE_RE.match(raw)
+        if not m:
+            continue
+        on = parse_date(m.group(1))
+        if on is None:
+            continue
+        rest = m.group(m.lastindex or 2)
+        words = re.sub(r"[-\d.,\s]+", " ", rest).strip()
+        nums = [n for n in LEDGER_NUM_RE.findall(rest)]
+        if len(nums) < 2:
+            continue
+        amount = _paise(nums[0].lstrip("-"))
+        balance = _paise(nums[-1].lstrip("-")) * (-1 if nums[-1].startswith("-") else 1)
+        if not words and amount == 0:
+            out.append((on, "open", 0, balance))
+        elif LEDGER_INT_RE.search(words) and not LEDGER_PAY_RE.search(words):
+            out.append((on, "int", amount, balance))
+        elif LEDGER_PAY_RE.search(words):
+            out.append((on, "pay", amount, balance))
+    return out
+
+
+def read_ledger_schedule(lines: list[str]) -> list[SchedRow]:
+    """EMIs from repayment + interest line pairs (same date). Needs at least 6 of them."""
+    rows = _ledger_rows(lines)
+    pays = [r for r in rows if r[1] == "pay"]
+    ints = [r for r in rows if r[1] == "int"]
+    if len(pays) < 6 or len(ints) < len(pays) // 2:
+        return []
+    out: list[SchedRow] = []
+    i = 0
+    while i < len(rows):
+        on, what, amount, bal = rows[i]
+        if what != "pay":
+            i += 1
+            continue
+        nxt = rows[i + 1] if i + 1 < len(rows) else None
+        interest, after = 0, bal
+        if nxt and nxt[1] == "int" and nxt[0] == on:
+            interest, after = nxt[2], nxt[3]
+            i += 1
+        opening = (bal or 0) + amount  # before the repayment
+        out.append(SchedRow(len(out) + 1, on, amount, amount - interest, interest, max(0, after or 0), opening))
+        i += 1
+    return out if len(out) >= 6 else []
+
+
+def _ledger_extras(st: "LoanStatement", text: str) -> None:
+    """A ledger schedule's loan number and amount, when the labels didn't give them."""
+    v = st.values
+    # the schedule itself says how many EMIs, when the last is and what's left — a header such as
+    # "Principal Balance" or a term / maturity counted from the loan date is less exact
+    for k in ("tenure", "last_emi_date", "outstanding"):
+        if k in st.from_labels:
+            v.pop(k, None)
+            st.from_labels.discard(k)
+    if not v.get("loan_number") and (m := ACCOUNT_NO_RE.search(text)):
+        v["loan_number"] = m.group(1)
+        st.from_labels.add("loan_number")
+    if not v.get("principal") and (m := REQUESTED_RE.search(text)):
+        v["principal"] = _paise(m.group(1))
+        st.from_labels.add("principal")
 
 
 def _rate_of(r: SchedRow, opening: int) -> float | None:
@@ -529,6 +619,33 @@ def _snap(bp: float) -> int:
     """Lenders' rates are usually in steps of 0.05%."""
     five = round(bp / 5) * 5
     return five if abs(five - bp) <= 2 else round(bp)
+
+
+def _rates_by_days(s: list[SchedRow]) -> list[tuple[SchedRow, float]] | None:
+    """The yearly rate from each EMI's interest counted on the days since the previous EMI, when that
+    is steady while the rate/12 reading jumps with the month's length (28 vs 31 days). None when
+    rate/12 fits — then nothing changes."""
+    month, days = [], []
+    for k in range(1, min(len(s), 13)):
+        opening = s[k].opening or s[k - 1].balance
+        n_days = (s[k].date - s[k - 1].date).days
+        if not opening or opening < 10_000 * RUPEE or not 27 <= n_days <= 32:
+            continue
+        month.append(s[k].interest * 120_000 / opening)
+        days.append((s[k], s[k].interest * 3_650_000 / (opening * n_days)))
+    if len(days) < 4:
+        return None
+    m_spread = max(month) - min(month)
+    d_spread = max(bp for _, bp in days) - min(bp for _, bp in days)
+    if m_spread < 15 or d_spread > 3:
+        return None
+    out = []
+    for k in range(1, len(s)):
+        opening = s[k].opening or s[k - 1].balance
+        n_days = (s[k].date - s[k - 1].date).days
+        if opening and opening >= 10_000 * RUPEE and 27 <= n_days <= 32:
+            out.append((s[k], s[k].interest * 3_650_000 / (opening * n_days)))
+    return out
 
 
 def _work_out(st: LoanStatement, today: date) -> None:
@@ -558,6 +675,10 @@ def _work_out(st: LoanStatement, today: date) -> None:
             if st.values.get("principal"):
                 st.put("rate", _snap(first.interest * 120_000 / int(st.values["principal"])))  # type: ignore[arg-type]
         elif rates:
+            by_days = _rates_by_days(s)
+            if by_days is not None:  # each month's interest on its actual days (365-day year)
+                v["interest_basis"] = "days365"
+                rates = by_days
             start = _snap(median(bp for _, bp in rates[:3]))
             label = v.get("rate")
             if label is not None and abs(int(label) - start) > 5:  # type: ignore[arg-type]
@@ -750,7 +871,11 @@ def _first_interest(st: LoanStatement) -> None:
     if not s or s[0].n != 1 or not p or not rate or v.get("method") != "reducing":
         return
     first, got = s[0].date, s[0].interest
-    if _near(got, month_interest(int(p), int(rate)), 2 * RUPEE):
+    daily = v.get("interest_basis") == "days365"
+    if daily and s[0].opening and s[0].opening > int(p):  # interest added to the balance before EMI 1
+        got += s[0].opening - int(p)  # type: ignore[operator]
+    normal = period_interest(int(p), int(rate), first, True) if daily else month_interest(int(p), int(rate))
+    if _near(got, normal, 2 * RUPEE):
         st.put("first_interest", "month")
         return
     taken = v.get("disbursed_date")
@@ -783,7 +908,10 @@ def _check(st: LoanStatement) -> None:
     if v["method"] == "reducing" and mode != "month":
         bpi = first_emi_interest(int(p), int(rate or 0), first, v.get("disbursed_date"), str(mode))  # type: ignore[arg-type]
     try:
-        ours = schedule_for(str(v["method"]), int(p), int(rate or 0), int(emi), int(tenure), first, bpi)  # type: ignore[arg-type]
+        ours = schedule_for(
+            str(v["method"]), int(p), int(rate or 0), int(emi), int(tenure), first, bpi,  # type: ignore[arg-type]
+            daily=v.get("interest_basis") == "days365",
+        )  # fmt: skip
     except ValueError:
         return
     stop = min((f.date for f in st.found), default=None)

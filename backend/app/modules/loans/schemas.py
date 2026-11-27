@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 Method = Literal["reducing", "flat", "emi_only"]
 CountMode = Literal["whole_emi", "interest_only"]
 FirstInterest = Literal["month", "days365", "days360"]
+InterestBasis = Literal["month", "days365"]  # each month's interest: rate/12, or the actual days / 365
 Kind = Literal["home", "car", "two_wheeler", "personal", "education", "gold", "property", "consumer", "other"]
 
 
@@ -23,11 +24,13 @@ class LoanIn(BaseModel):
     first_emi_date: Date
     disbursed_date: Date | None = None
     first_interest: FirstInterest = "month"  # EMI 1: a month's interest, or the days since disbursed_date
+    interest_basis: InterestBasis = "month"
     pay_from_id: int | None = None
     start: Literal["new", "existing"] = "new"
     # new loan: where the money went
     money: Literal["received", "seller", "none"] = "none"
     received_into_id: int | None = None  # money == received: the bank account it came into
+    charges: int | None = Field(default=None, ge=0, le=10**12)  # money == received: paise the lender kept (fees)
     seller_name: str | None = Field(default=None, max_length=120)  # money == seller (interest_only)
     category_id: int | None = None  # money == seller (interest_only): what it paid for
     # existing loan
@@ -62,6 +65,7 @@ class LoanPatch(BaseModel):
     first_emi_date: Date | None = None
     disbursed_date: Date | None = None
     first_interest: FirstInterest | None = None
+    interest_basis: InterestBasis | None = None
     paid_before: int | None = Field(default=None, ge=0, le=600)
 
 
@@ -91,6 +95,20 @@ class RateIn(BaseModel):
     date: Date
     rate: float = Field(ge=0, le=60)
     mode: Literal["reduce_tenure", "reduce_emi"] = "reduce_tenure"
+
+
+class CloseIn(BaseModel):
+    """The loan paid off early: the day and what you paid in all (or an existing payment)."""
+
+    date: Date
+    amount: int = Field(gt=0, le=10**13)  # paise: everything paid to close it
+    from_account_id: int | None = None  # default: the loan's "paid from" account
+    transaction_id: int | None = None  # an existing bank payment that IS this (e.g. from a statement)
+
+
+class PayoffOut(BaseModel):
+    date: Date
+    left: int  # paise: what was left to repay that day, after the EMIs due by then
 
 
 class EventPatch(BaseModel):
@@ -159,6 +177,7 @@ class LoanOut(BaseModel):
     first_emi_date: Date
     disbursed_date: Date | None
     first_interest: str  # month | days365 | days360
+    interest_basis: str = "month"  # month | days365
     first_interest_days: int | None  # days counted in EMI 1 (days365 / days360 with a taken-on date)
     last_emi_off: bool = False  # the last EMI is > 2% away from the EMI (reducing, no changes)
     first_interest_suggestion: str | None = None  # the first-EMI interest that makes it fit
@@ -256,7 +275,7 @@ class LoanStatementEvent(BaseModel):
 class LoanStatementDiff(BaseModel):
     field: str
     label: str
-    kind: Literal["money", "date", "rate", "count", "text", "kind", "first_interest", "method"]
+    kind: Literal["money", "date", "rate", "count", "text", "kind", "first_interest", "method", "interest_basis"]
     current: str | int | float | None  # money in paise, dates ISO
     statement: str | int | float | None
     patch: dict | None  # PATCH /loans/{id} body; None = shown only

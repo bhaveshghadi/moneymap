@@ -150,6 +150,8 @@ export interface LoanRow {
   paid: boolean;
 }
 
+export type LoanInterestBasis = 'month' | 'days365';
+
 export interface Loan {
   id: number; // the loan's account id
   loan_id: number;
@@ -169,6 +171,7 @@ export interface Loan {
   first_emi_date: string;
   disbursed_date: string | null;
   first_interest: LoanFirstInterest; // EMI 1: a month's interest, or the days since disbursed_date
+  interest_basis: LoanInterestBasis; // each month's interest: rate/12, or the actual days / 365
   first_interest_days: number | null; // days counted in EMI 1
   last_emi_off: boolean; // the last EMI is > 2% away from the EMI (reducing, no changes)
   first_interest_suggestion: LoanFirstInterest | null; // the first-EMI interest that makes it fit
@@ -194,7 +197,8 @@ export interface LoanEvent {
   id: number;
   kind: 'prepay' | 'rate';
   date: string;
-  mode: 'reduce_tenure' | 'reduce_emi';
+  /** close: the loan paid off early (a prepay that clears what was left) */
+  mode: 'reduce_tenure' | 'reduce_emi' | 'close';
   amount: number | null;
   rate: number | null;
   before_n: number | null;
@@ -796,6 +800,8 @@ export interface CasDetail {
   rows: CasRow[];
   unparsed: string[];
   counts: Record<string, number>;
+  /** A summary CAS: today's holdings only, no transactions (funds come in as "fund only"). */
+  summary: boolean;
 }
 
 export interface CasSummary {
@@ -907,7 +913,7 @@ export interface LoanStatementEvent {
 export interface LoanStatementDiff {
   field: string;
   label: string;
-  kind: 'money' | 'date' | 'rate' | 'count' | 'text' | 'kind' | 'first_interest' | 'method';
+  kind: 'money' | 'date' | 'rate' | 'count' | 'text' | 'kind' | 'first_interest' | 'method' | 'interest_basis';
   current: string | number | null; // money in paise, dates ISO
   statement: string | number | null;
   patch: Record<string, unknown> | null;
@@ -920,7 +926,7 @@ export interface LoanStatementResult {
   attachment_id: number | null;
   fields: Partial<Record<
     | 'loan_number' | 'lender' | 'kind' | 'method' | 'principal' | 'rate' | 'rate_now' | 'tenure' | 'emi'
-    | 'first_emi_date' | 'disbursed_date' | 'first_interest' | 'last_emi_date' | 'outstanding' | 'emis_paid'
+    | 'first_emi_date' | 'disbursed_date' | 'first_interest' | 'interest_basis' | 'last_emi_date' | 'outstanding' | 'emis_paid'
     | 'emis_left' | 'statement_date',
     LoanStatementField
   >>;

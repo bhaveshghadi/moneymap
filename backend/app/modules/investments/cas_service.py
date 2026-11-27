@@ -251,6 +251,7 @@ def create_draft(db: Session, st: CasStatement, text: str, filename: str, **sour
             nav_date=f.nav_date,
             cost=f.cost,
             market_value=f.market_value,
+            mode="fund" if st.summary else "both",  # a summary has holdings only
         )
         cas.funds.append(cf)
         for t in f.txns:

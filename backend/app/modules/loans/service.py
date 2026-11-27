@@ -34,6 +34,11 @@ def base_rate(loan: Loan) -> int:
     return loan.rate_bp or 0
 
 
+def daily(loan: Loan) -> bool:
+    """Each month's interest on its actual days (365-day year) — reducing balance only."""
+    return loan.method == "reducing" and loan.interest_basis == "days365"
+
+
 def first_interest(loan: Loan) -> int | None:
     """EMI 1's interest when the lender counts the days from the loan being paid out (else None)."""
     if loan.method != "reducing":
@@ -78,6 +83,7 @@ def last_emi_check(loan: Loan, rows: list[Row]) -> tuple[bool, str | None]:
                     loan.tenure,
                     loan.first_emi_date,
                     first_interest=bpi,
+                    daily=daily(loan),
                 )
             )
         except ValueError:
@@ -101,11 +107,35 @@ def schedule_with(loan: Loan, events: list[Event]) -> tuple[list[Row], list]:
             loan.first_emi_date,
             events,
             first_interest=first_interest(loan),
+            daily=daily(loan),
         )
     rows = schedule_for(
-        loan.method, loan.principal, loan.rate_bp, loan.emi, loan.tenure, loan.first_emi_date, first_interest(loan)
+        loan.method,
+        loan.principal,
+        loan.rate_bp,
+        loan.emi,
+        loan.tenure,
+        loan.first_emi_date,
+        first_interest(loan),
+        daily=daily(loan),
     )
     return rows, []
+
+
+def principal_left(loan: Loan, on: date) -> int:
+    """What's left to repay on a day, after the EMIs due by then (and part-payments made by then)."""
+    rows, _ = schedule_with(loan, to_events(loan.events))
+    due = [r for r in rows if r.date <= on]
+    left = due[-1].balance if due else (loan.principal or 0)
+    since = due[-1].date if due else None
+    for e in loan.events:  # part-payments made after the last EMI due, by this day (not yet in a row)
+        if e.kind == "prepay" and e.date <= on and (since is None or e.date >= since):
+            left -= e.amount or 0
+    return max(0, left)
+
+
+def close_event(loan: Loan) -> LoanEvent | None:
+    return next((e for e in loan.events if e.kind == "prepay" and e.mode == "close"), None)
 
 
 def schedule(loan: Loan) -> list[Row]:
@@ -190,6 +220,7 @@ def loan_out(db: Session, loan: Loan, today: date | None = None, detail: bool = 
         first_emi_date=loan.first_emi_date,
         disbursed_date=loan.disbursed_date,
         first_interest=loan.first_interest,
+        interest_basis=loan.interest_basis,
         first_interest_days=first_interest_days(loan),
         last_emi_off=last_off,
         first_interest_suggestion=suggestion,

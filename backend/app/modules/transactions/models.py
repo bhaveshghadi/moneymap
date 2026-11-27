@@ -70,7 +70,7 @@ class Transaction(Base):
     loan_id: Mapped[int | None] = mapped_column(
         ForeignKey("loan.id", ondelete="SET NULL", name="fk_transaction_loan_id_loan"), index=True
     )
-    loan_part: Mapped[str | None] = mapped_column(String(12))  # emi | principal | interest | disbursal
+    loan_part: Mapped[str | None] = mapped_column(String(12))  # emi|principal|interest|disbursal|charges|prepay
     loan_n: Mapped[int | None] = mapped_column(Integer)  # which EMI of the schedule (emi / principal / interest)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

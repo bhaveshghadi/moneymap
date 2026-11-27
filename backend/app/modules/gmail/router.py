@@ -3,6 +3,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ...core.once import one_at_a_time
 from ...db import get_db
 from ..auth.security import current_user
 from . import client as gclient
@@ -157,6 +158,7 @@ def run_out(run: GmailRun) -> GmailRunOut:
 
 
 @router.post("/estimate", response_model=GmailRunOut)
+@one_at_a_time("gmail-fetch")
 def estimate(body: GmailEstimateIn, db: Session = Depends(get_db)) -> GmailRunOut:
     """Step 1: count matching emails and estimate download size. Downloads nothing."""
     try:
@@ -166,6 +168,7 @@ def estimate(body: GmailEstimateIn, db: Session = Depends(get_db)) -> GmailRunOu
 
 
 @router.post("/runs/{run_id}/start", response_model=GmailRunOut)
+@one_at_a_time("gmail-fetch")
 def start(run_id: int, body: GmailStartIn, db: Session = Depends(get_db)) -> GmailRunOut:
     """Step 2: download the new emails + attachments in the background."""
     run = _run(db, run_id)

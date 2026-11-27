@@ -42,7 +42,8 @@ EXTRA_LENDERS = ["Bajaj Finance", "Bajaj Finserv", "Tata Capital", "LIC Housing 
                  "PNB Housing", "Aditya Birla Capital", "L&T Finance", "Poonawalla Fincorp", "HDB Financial",
                  "Home First Finance", "Aavas Financiers", "Credila", "Avanse"]  # fmt: skip
 FIELDS = ("loan_number", "lender", "kind", "method", "principal", "rate", "rate_now", "tenure", "emi",
-          "first_emi_date", "disbursed_date", "first_interest", "last_emi_date", "outstanding", "emis_paid",
+          "first_emi_date", "disbursed_date", "first_interest", "interest_basis", "last_emi_date", "outstanding",
+          "emis_paid",
           "emis_left", "statement_date")  # fmt: skip
 
 
@@ -243,6 +244,9 @@ def _compare(db: Session, loan: Loan, st: LoanStatement, events: list[LoanStatem
         add("kind", "Type", "kind", loan.kind, str(v["kind"]), {"kind": v["kind"]})
     # terms (the EMI at the start: the schedule's first row, or the statement's EMI when nothing changed)
     start_emi = st.schedule[0].emi if st.schedule and st.schedule[0].n == 1 else None
+    s3 = st.schedule[:3]
+    if start_emi and len(s3) == 3 and s3[0].emi != s3[1].emi == s3[2].emi:
+        start_emi = s3[1].emi  # only the first EMI differs (it carried extra days): the loan's EMI is the next
     if start_emi is None and v.get("emi") and not st.found and not loan.events:
         start_emi = int(v["emi"])  # type: ignore[arg-type]
     terms: dict = {}
@@ -259,6 +263,8 @@ def _compare(db: Session, loan: Loan, st: LoanStatement, events: list[LoanStatem
     if loan.method == "emi_only" and start_rate is not None and v.get("method") in ("reducing", "flat"):
         # "EMI only" can't split an EMI; the statement has the rate (and a schedule's split) to do it
         patch = {"method": v["method"], "rate": int(start_rate) / 100, "emi": start_emi or loan.emi}  # type: ignore[arg-type]
+        if v["method"] == "reducing" and v.get("interest_basis"):
+            patch["interest_basis"] = v["interest_basis"]
         if v["method"] == "reducing" and v.get("first_interest"):
             patch["first_interest"] = v["first_interest"]
             if v["first_interest"] != "month" and v.get("disbursed_date"):
@@ -280,6 +286,12 @@ def _compare(db: Session, loan: Loan, st: LoanStatement, events: list[LoanStatem
             patch["disbursed_date"] = v["disbursed_date"].isoformat()  # type: ignore[union-attr]
         add("first_interest", "Interest in the first EMI", "first_interest", loan.first_interest,
             str(v["first_interest"]), patch)  # fmt: skip
+    basis = str(v.get("interest_basis") or "month")
+    if loan.method == "reducing" and basis != loan.interest_basis:
+        add("interest_basis", "Interest each month", "interest_basis", loan.interest_basis, basis,
+            {"interest_basis": basis},
+            "Worked out from the schedule: each month's interest follows the days in that month."
+            if basis == "days365" else None)  # fmt: skip
     if start_emi and abs(start_emi - loan.emi) > ROUNDING:
         add("emi", "EMI at the start", "money", loan.emi, start_emi, {"emi": start_emi})
     if terms and start_emi:

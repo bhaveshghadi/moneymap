@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from ...config import get_settings
 from ...core.crypto import DecryptError, decrypt, encrypt
+from ...core.once import one_at_a_time
 from ...db import get_db
 from ..accounts.models import OWN_TYPES, Account, AccountType
 from ..auth.models import Setting
@@ -56,7 +57,7 @@ router = APIRouter(prefix="/statements", tags=["statement import"], dependencies
 BALANCE_TYPES = tuple(str(t) for t in OWN_TYPES if t != AccountType.investment)
 ROUNDING = 100  # paise: a statement "adds up" within ₹1
 CAS_PASSWORD_KEY = "pdf_password:cas"  # a CAS uploaded from Investments
-CAS_RE = re.compile(r"consolidated\s+account\s+statement", re.I)
+CAS_RE = re.compile(r"consolidated\s+account\s+(?:statement|summary)", re.I)  # detailed or summary
 
 
 def is_cas(text: str) -> bool:
@@ -248,6 +249,7 @@ def list_statements(db: Session = Depends(get_db)) -> list[StatementSummary]:
 
 
 @router.post("", response_model=StatementDetail, status_code=201)
+@one_at_a_time("statement-open")
 def start_import(body: StatementStartIn, db: Session = Depends(get_db)) -> StatementDetail:
     """Read a statement PDF from the Inbox and create a draft import to review.
     Re-opening the same PDF returns the existing import."""
@@ -288,6 +290,7 @@ def start_import(body: StatementStartIn, db: Session = Depends(get_db)) -> State
 
 
 @router.post("/upload", response_model=StatementDetail, status_code=201)
+@one_at_a_time("statement-open")
 def upload_statement(body: StatementUploadIn, db: Session = Depends(get_db)) -> StatementDetail:
     """A statement PDF downloaded from your bank's website: same reading and
     review as one from the Inbox. Uploading the same file again opens its draft."""
@@ -795,6 +798,7 @@ def apply_to_similar(sid: int, rid: int, db: Session = Depends(get_db)) -> State
 
 
 @router.post("/{sid}/import", response_model=StatementImportOut)
+@one_at_a_time("statement-import")
 def do_import(sid: int, db: Session = Depends(get_db)) -> StatementImportOut:
     """Create transactions for every ready row.
     Refused while any included row still needs a category or transfer account."""

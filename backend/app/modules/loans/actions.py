@@ -14,7 +14,17 @@ from ..transactions.models import Transaction, TransactionType
 from ..transactions.schemas import TransactionIn
 from ..transactions.service import apply_body
 from .models import Loan, LoanEvent
-from .service import EMI_CATEGORY, FEE_CATEGORY, INTEREST_CATEGORY, category_id, loan_out, paid_numbers, schedule
+from .service import (
+    EMI_CATEGORY,
+    FEE_CATEGORY,
+    INTEREST_CATEGORY,
+    category_id,
+    close_event,
+    loan_out,
+    paid_numbers,
+    principal_left,
+    schedule,
+)
 
 ROUNDING = 100  # an EMI matches within ₹1
 NEAR_DAYS = 20  # a payment belongs to the EMI dated within this many days
@@ -174,9 +184,108 @@ def record_prepay(
     return ev
 
 
+def close_loan(
+    db: Session,
+    loan: Loan,
+    on: date,
+    amount: int,
+    from_account: Account | None = None,
+    existing: Transaction | None = None,
+) -> LoanEvent:
+    """The loan paid off early (foreclosed): the payment clears what was left on the day; anything
+    paid beyond it is the lender's closing charges and interest for the days since the last EMI.
+    interest_only: the payment is a transfer bank -> loan and the charges an expense ("Loan Interest")
+    paid out of the loan; whole_emi: the whole payment counts as spending ("Loan / EMI"), as EMIs do.
+    `existing`: a bank expense, or a transfer from a bank to this loan, that already is the payment."""
+    if close_event(loan) is not None:
+        raise _bad("This loan is already closed with a payment — remove that first to change it.")
+    who = loan.lender or loan.account.name
+    was = None
+    if existing is not None:
+        if existing.loan_id is not None:
+            raise _bad("That transaction is already linked to a loan.")
+        to_loan = existing.type == TransactionType.transfer.value and existing.destination_id == loan.account_id
+        bank_expense = existing.type == TransactionType.withdrawal.value
+        if not (to_loan or bank_expense) or existing.source.type not in BANK_TYPES:
+            raise _bad("Pick a payment from a bank or cash account (an expense, or a transfer to this loan).")
+        amount, on, was = existing.amount, existing.date, existing.type
+    left = principal_left(loan, on)
+    if left <= 0:
+        raise _bad("Nothing is left to repay on that day.")
+    if amount < left:
+        raise _bad(
+            f"₹{amount / 100:,.2f} is less than the ₹{left / 100:,.2f} left on {on:%d %b %Y} — "
+            "record it as a part-payment instead."
+        )
+    if existing is not None:
+        t, created = existing, False
+        if loan.count_mode == "interest_only":
+            t.type, t.destination_id = TransactionType.transfer.value, loan.account_id
+            t.category_id = t.budget_id = t.bill_id = None
+        else:
+            if t.type == TransactionType.transfer.value:
+                payee = find_or_create_counterparty(db, f"{who} EMI", AccountType.expense)
+                t.type, t.destination_id = TransactionType.withdrawal.value, payee.id
+            t.category_id = category_id(db, EMI_CATEGORY)
+        t.loan_id, t.loan_part, t.loan_n = loan.id, "prepay", None
+    else:
+        if from_account is None or from_account.type not in BANK_TYPES:
+            raise _bad("Choose the bank or cash account the loan was paid off from.")
+        body = {
+            "date": on,
+            "amount": amount,
+            "source_id": from_account.id,
+            "description": f"Loan closed · {loan.account.name}",
+        }
+        if loan.count_mode == "interest_only":
+            body |= {"type": "transfer", "destination_id": loan.account_id}
+        else:
+            body |= {
+                "type": "withdrawal",
+                "destination_name": f"{who} EMI",
+                "category_id": category_id(db, EMI_CATEGORY),
+            }
+        t, created = _new_txn(db, body, loan, "prepay"), True
+    ev = LoanEvent(
+        kind="prepay", date=on, mode="close", amount=left, txn_id=t.id, txn_created=created,
+        txn_was=was, paid_before_was=loan.paid_before,
+    )  # fmt: skip
+    extra = amount - left
+    if extra and loan.count_mode == "interest_only":  # whole_emi: already spending, in the payment
+        f = _new_txn(
+            db,
+            {
+                "type": "withdrawal",
+                "date": on,
+                "amount": extra,
+                "description": f"Closing charges & interest · {loan.account.name}",
+                "source_id": loan.account_id,
+                "destination_name": who,
+                "category_id": category_id(db, INTEREST_CATEGORY),
+            },
+            loan,
+            "fee",
+        )
+        ev.fee_txn_id = f.id
+    rows = schedule(loan)
+    loan.paid_before = max(loan.paid_before, sum(1 for r in rows if r.date <= on))  # the EMIs due by then
+    loan.events.append(ev)
+    loan.closed_on = on
+    db.flush()
+    return ev
+
+
 def remove_event(db: Session, loan: Loan, ev: LoanEvent) -> None:
-    """Undo a part-payment / rate change. A payment made here is deleted; one that was an
-    existing expense goes back to being a plain expense."""
+    """Undo a part-payment / rate change / early close. A payment made here is deleted; one that
+    was an existing transaction goes back to what it was."""
+    if ev.mode == "close":
+        t = db.get(Transaction, ev.txn_id) if ev.txn_id else None
+        if t is not None and not ev.txn_created and ev.txn_was == TransactionType.transfer.value:
+            t.type, t.destination_id, t.category_id = TransactionType.transfer.value, loan.account_id, None
+            t.loan_id = t.loan_part = t.loan_n = None
+            ev.txn_id = None  # put back as it was: nothing more to do with it below
+        if ev.paid_before_was is not None:
+            loan.paid_before = ev.paid_before_was
     if ev.kind == "prepay" and ev.txn_id:
         t = db.get(Transaction, ev.txn_id)
         if t is not None and ev.txn_created:

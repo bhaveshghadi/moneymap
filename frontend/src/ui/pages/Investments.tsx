@@ -18,6 +18,7 @@ import { DUE_LABEL, InvestmentForm, KIND_META, KIND_ORDER, subtypeLabel } from '
 import { UploadStatement } from '../shared/UploadStatement';
 import { Icon } from '../primitives/Icon';
 import { PageHelp } from '../shared/PageHelp';
+import { GetCasDialog } from '../shared/GetCas';
 
 /** "Matures in 20 days", "Premium due tomorrow", "Matured 3 days ago". */
 export function dueWhen(d: InvestmentDue): string {
@@ -47,6 +48,7 @@ export function InvestmentsPage() {
   const [rates, setRates] = useState(false);
   const [showClosed, setShowClosed] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [gettingCas, setGettingCas] = useState(false);
   const cas = useApi<CasSummary[]>('/investments/cas');
   const drafts = (cas.data ?? []).filter((c) => c.status === 'draft');
   const data = list.data;
@@ -67,6 +69,7 @@ export function InvestmentsPage() {
           {(hasGold || s?.rates.gold_24k) && (
             <Button variant="ghost" icon="gem" onClick={() => setRates(true)}>Gold rate</Button>
           )}
+          <Button variant="ghost" icon="external-link" onClick={() => setGettingCas(true)}>Get your CAS</Button>
           <Button variant="secondary" icon="file-up" onClick={() => setImporting(true)}>Import CAS</Button>
           <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add investment</Button>
         </div>
@@ -162,6 +165,7 @@ export function InvestmentsPage() {
       )}
       {adding && <InvestmentForm onClose={() => setAdding(false)} onImportCas={() => setImporting(true)} />}
       {importing && <UploadStatement cas onClose={() => setImporting(false)} />}
+      {gettingCas && <GetCasDialog onClose={() => setGettingCas(false)} />}
       {rates && s && <RatesDialog rates={s.rates} onClose={() => setRates(false)} />}
     </div>
   );

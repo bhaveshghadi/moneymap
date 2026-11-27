@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api, qs } from '../lib/api';
 import { useApi, useShell } from '../contexts/ShellCtx';
-import type { Account, LoanCountMode, LoanDetail, LoanFirstInterest, LoanKind, LoanLinkable, LoanMethod } from '../lib/types';
+import type { Account, LoanCountMode, LoanDetail, LoanFirstInterest, LoanInterestBasis, LoanKind, LoanLinkable, LoanMethod } from '../lib/types';
 import { dueText, fmtDate, paiseToInput, rs, toPaise, todayIso } from '../lib/format';
 import { Button } from '../primitives/Button';
 import { Money } from '../primitives/Money';
@@ -16,8 +16,8 @@ import { Icon } from '../primitives/Icon';
 import { Dialog, useDialogClose } from '../primitives/Dialog';
 import { DrawerHead } from '../shared/DrawerHead';
 import { Progress } from '../shared/Progress';
-import { COUNT_LABEL, FIRST_INTEREST_LABEL, LOAN_KINDS, METHOD_LABEL, kindLabel } from '../shared/LoanForm';
-import { LoanChangesList, PrepayDialog, RateDialog } from '../shared/LoanChanges';
+import { COUNT_LABEL, FIRST_INTEREST_LABEL, INTEREST_BASIS_LABEL, LOAN_KINDS, METHOD_LABEL, kindLabel } from '../shared/LoanForm';
+import { CloseDialog, LoanChangesList, PrepayDialog, RateDialog } from '../shared/LoanChanges';
 import { LoanStatementDialog } from '../shared/LoanStatement';
 import { SegmentedControl } from '../primitives/SegmentedControl';
 import { PageHelp } from '../shared/PageHelp';
@@ -29,6 +29,7 @@ export function LoanDetailPage({ id }: { id: number }) {
   const [linking, setLinking] = useState(false);
   const [prepaying, setPrepaying] = useState(false);
   const [rating, setRating] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [fromStatement, setFromStatement] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -88,6 +89,9 @@ export function LoanDetailPage({ id }: { id: number }) {
               <Button variant="secondary" icon="piggy-bank" onClick={() => setPrepaying(true)}>Part-payment</Button>
               <Button variant="ghost" icon="percent" onClick={() => setRating(true)}>Rate change</Button>
             </>
+          )}
+          {l.supports_changes && l.outstanding > 0 && !l.events.some((ev) => ev.mode === 'close') && (
+            <Button variant="secondary" icon="circle-check" onClick={() => setClosing(true)}>Close loan (paid off early)</Button>
           )}
           {l.next && (
             <Button variant="primary" icon="check" onClick={record} disabled={busy || !l.pay_from_id} title={l.pay_from_id ? undefined : 'Set “EMI is paid from” in Edit first'}>
@@ -159,6 +163,9 @@ export function LoanDetailPage({ id }: { id: number }) {
         {l.prepaid > 0 && <span><span className="muted">Part-payments </span><b><Money amount={rs(l.prepaid)} interactive={false} /></b></span>}
         <span><span className="muted">Total to pay back </span><b><Money amount={rs(l.total_payable)} interactive={false} /></b></span>
         <span><span className="muted">Repayment </span>{METHOD_LABEL[l.method]}</span>
+        {l.method === 'reducing' && l.interest_basis === 'days365' && (
+          <span><span className="muted">Interest </span>actual days in each month (365-day year)</span>
+        )}
         {l.first_interest_days !== null && (
           <span>
             <span className="muted">First EMI interest </span>
@@ -223,7 +230,7 @@ export function LoanDetailPage({ id }: { id: number }) {
                   .map((ev) => (
                     <tr key={`ev${ev.id}`}>
                       <td colSpan={7} className="muted" style={{ fontSize: 12.5 }}>
-                        ↳ {fmtDate(ev.date)}: {ev.kind === 'prepay' ? `part-payment ₹${((ev.amount ?? 0) / 100).toLocaleString('en-IN')}` : `rate ${ev.rate}%`}
+                        ↳ {fmtDate(ev.date)}: {ev.mode === 'close' ? `loan closed — paid off ₹${((ev.amount ?? 0) / 100).toLocaleString('en-IN')}` : ev.kind === 'prepay' ? `part-payment ₹${((ev.amount ?? 0) / 100).toLocaleString('en-IN')}` : `rate ${ev.rate}%`}
                         {ev.emi_after ? ` — EMI from here ₹${(ev.emi_after / 100).toLocaleString('en-IN')}` : ''}
                       </td>
                     </tr>
@@ -248,6 +255,7 @@ export function LoanDetailPage({ id }: { id: number }) {
       {editing && <EditLoan loan={l} onClose={() => setEditing(false)} />}
       {linking && <LinkPast loan={l} onClose={() => setLinking(false)} />}
       {prepaying && <PrepayDialog loan={l} onClose={() => setPrepaying(false)} />}
+      {closing && <CloseDialog loan={l} onClose={() => setClosing(false)} />}
       {fromStatement && <LoanStatementDialog accountId={l.id} onClose={() => setFromStatement(false)} />}
       {rating && <RateDialog loan={l} onClose={() => setRating(false)} />}
     </div>
@@ -284,6 +292,7 @@ function EditBody({ loan }: { loan: LoanDetail }) {
     firstEmi: loan.first_emi_date,
     disbursed: loan.disbursed_date ?? '',
     firstInterest: loan.first_interest,
+    interestBasis: loan.interest_basis,
     paidBefore: String(loan.paid_before),
   });
   const [error, setError] = useState<string | null>(null);
@@ -313,6 +322,7 @@ function EditBody({ loan }: { loan: LoanDetail }) {
     if (f.firstEmi !== loan.first_emi_date) body.first_emi_date = f.firstEmi;
     if (f.disbursed !== (loan.disbursed_date ?? '')) body.disbursed_date = f.disbursed || null;
     if (f.firstInterest !== loan.first_interest) body.first_interest = f.firstInterest;
+    if (f.interestBasis !== loan.interest_basis) body.interest_basis = f.interestBasis;
     if (f.method === 'reducing' && f.firstInterest !== 'month' && !f.disbursed) {
       return setError('Enter the date the loan was taken on — the first EMI’s interest is counted from it.');
     }
@@ -432,6 +442,15 @@ function EditBody({ loan }: { loan: LoanDetail }) {
                   {(Object.keys(FIRST_INTEREST_LABEL) as LoanFirstInterest[]).map((k) => <option key={k} value={k}>{FIRST_INTEREST_LABEL[k]}</option>)}
                 </select>
               </div>
+            </div>
+          )}
+          {f.method === 'reducing' && (
+            <div className="field">
+              <label htmlFor="le-basis">Interest each month</label>
+              <select id="le-basis" className="inp" value={f.interestBasis} onChange={(e) => set('interestBasis', e.target.value as LoanInterestBasis)}>
+                {(Object.keys(INTEREST_BASIS_LABEL) as LoanInterestBasis[]).map((k) => <option key={k} value={k}>{INTEREST_BASIS_LABEL[k]}</option>)}
+              </select>
+              <div className="hint">Changing it keeps your EMI and works the schedule out again.</div>
             </div>
           )}
           <div className="row2">

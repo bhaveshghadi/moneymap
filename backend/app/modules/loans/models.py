@@ -41,6 +41,8 @@ class Loan(Base):
     disbursed_date: Mapped[date | None] = mapped_column(Date)
     # EMI 1's interest: one month (month) or the days from disbursed_date, on a 365 / 360-day year
     first_interest: Mapped[str] = mapped_column(String(8), default="month", server_default="month")
+    # each month's interest: rate/12 ("month", most lenders) or the actual days on a 365-day year ("days365")
+    interest_basis: Mapped[str] = mapped_column(String(8), default="month", server_default="month")
     pay_from_id: Mapped[int | None] = mapped_column(
         ForeignKey("account.id", name="fk_loan_pay_from_id_account", ondelete="SET NULL")
     )  # the bank account the EMI is paid from
@@ -67,7 +69,8 @@ class LoanEvent(Base):
     )
     kind: Mapped[str] = mapped_column(String(8))  # prepay | rate
     date: Mapped[date] = mapped_column(Date)
-    mode: Mapped[str] = mapped_column(String(16))  # reduce_tenure (EMI stays) | reduce_emi (end date stays)
+    # reduce_tenure (EMI stays) | reduce_emi (end date stays) | close (prepay: the loan paid off early)
+    mode: Mapped[str] = mapped_column(String(16))
     amount: Mapped[int | None] = mapped_column(Integer)  # prepay: paise
     rate_bp: Mapped[int | None] = mapped_column(Integer)  # rate: the new yearly rate x100
     txn_id: Mapped[int | None] = mapped_column(
@@ -76,5 +79,7 @@ class LoanEvent(Base):
     txn_created: Mapped[bool] = mapped_column(Boolean, default=False)  # made here (deleted with the event)
     fee_txn_id: Mapped[int | None] = mapped_column(
         ForeignKey("transaction.id", name="fk_loan_event_fee_txn_id_transaction", ondelete="SET NULL")
-    )  # prepay: the lender's charge, if any
+    )  # prepay: the lender's charge, if any (close: the charges and interest beyond what was left)
+    txn_was: Mapped[str | None] = mapped_column(String(12))  # close: the payment's type before (put back on undo)
+    paid_before_was: Mapped[int | None] = mapped_column(Integer)  # close: paid_before before (put back on undo)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

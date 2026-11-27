@@ -10,6 +10,7 @@ import { CategoryGlyph } from '../primitives/CategoryGlyph';
 import { Icon } from '../primitives/Icon';
 import { DrawerHead } from './DrawerHead';
 import { useStay } from '../contexts/StayCtx';
+import { CAMS_CAS_URL } from './GetCas';
 
 const MAX_MB = 15;
 
@@ -152,6 +153,15 @@ function Body({ cas }: { cas: boolean }) {
           <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => pick(e.target.files?.[0])} />
         </div>
 
+        {cas && (
+          <div className="hint" style={{ marginTop: 10 }}>
+            Don&apos;t have one yet?{' '}
+            <a href={CAMS_CAS_URL} target="_blank" rel="noreferrer">
+              Get a detailed CAS free from CAMS <Icon name="external-link" size={12} />
+            </a>{' '}
+            — choose <b>Detailed</b>, <b>Since inception</b>, and set a PDF password.
+          </div>
+        )}
         {!cas && (
         <div className="field" style={{ marginTop: 16 }}>
           <label htmlFor="up-acct">Account</label>

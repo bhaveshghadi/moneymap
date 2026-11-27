@@ -22,9 +22,31 @@ function detailMessage(body: unknown, status: number): string {
   return `Request failed (HTTP ${status})`;
 }
 
+/** Writes (POST / PUT / PATCH / DELETE) still running, or finished within REPEAT_MS, by method + path + body.
+ * A double or triple click on Save / Import / Delete sends the same request again: it gets the
+ * first one's answer instead of doing the work twice. */
+const writes = new Map<string, Promise<unknown>>();
+const REPEAT_MS = 1500;
+
 /** JSON fetch against the FastAPI backend (proxied by Next at /api).
  * A 401 anywhere means the session ended — bounce to /login. */
-export async function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+export function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  const method = (init?.method ?? 'GET').toUpperCase();
+  if (method === 'GET') return send<T>(path, init);
+  const key = `${method} ${path} ${init?.body !== undefined ? JSON.stringify(init.body) : ''}`;
+  const same = writes.get(key);
+  if (same) return same as Promise<T>;
+  // a different change to the same thing (a box ticked, then unticked) makes the older answer stale
+  const target = `${method} ${path} `;
+  for (const k of writes.keys()) if (k.startsWith(target)) writes.delete(k);
+  const p = send<T>(path, init);
+  writes.set(key, p);
+  const forget = () => setTimeout(() => writes.get(key) === p && writes.delete(key), REPEAT_MS);
+  p.then(forget, () => writes.get(key) === p && writes.delete(key)); // a failed request may be tried again at once
+  return p;
+}
+
+async function send<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method: init?.method ?? 'GET',
     headers: init?.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,

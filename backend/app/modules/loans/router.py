@@ -10,10 +10,21 @@ from ..accounts.models import Account, AccountType
 from ..accounts.service import find_or_create_counterparty
 from ..auth.security import current_user
 from ..transactions.models import Transaction, TransactionType
-from .actions import BANK_TYPES, ROUNDING, _bad, _new_txn, change_count_mode, link_payments, record_prepay, remove_event
+from .actions import (
+    BANK_TYPES,
+    ROUNDING,
+    _bad,
+    _new_txn,
+    change_count_mode,
+    close_loan,
+    link_payments,
+    record_prepay,
+    remove_event,
+)
 from .maths import Event, calc_emi, first_emi_interest, flat_emi, schedule_for
 from .models import Loan, LoanEvent
 from .schemas import (
+    CloseIn,
     EventPatch,
     Linkable,
     LinkIn,
@@ -24,6 +35,7 @@ from .schemas import (
     LoanOut,
     LoanPatch,
     PayIn,
+    PayoffOut,
     PlanOut,
     PrepayIn,
     RateIn,
@@ -32,11 +44,13 @@ from .schemas import (
 )
 from .service import (
     EMI_CATEGORY,
+    FEE_CATEGORY,
     INTEREST_CATEGORY,
     all_loans,
     category_id,
     loan_dues,
     loan_out,
+    principal_left,
     remaining,
     schedule_with,
     supports_changes,
@@ -154,7 +168,10 @@ def create_loan(body: LoanIn, db: Session = Depends(get_db)) -> LoanDetail:
         else flat_emi(body.principal, rate_bp, body.tenure)
     )
     try:
-        rows = schedule_for(body.method, body.principal, rate_bp, emi, body.tenure, body.first_emi_date, bpi)
+        rows = schedule_for(
+            body.method, body.principal, rate_bp, emi, body.tenure, body.first_emi_date, bpi,
+            daily=body.interest_basis == "days365",
+        )  # fmt: skip
     except ValueError as e:
         raise _bad(str(e)) from e
     pay_from = _bank(db, body.pay_from_id, "the EMI is paid from") if body.pay_from_id else None
@@ -181,6 +198,7 @@ def create_loan(body: LoanIn, db: Session = Depends(get_db)) -> LoanDetail:
         first_emi_date=body.first_emi_date,
         disbursed_date=body.disbursed_date,
         first_interest=body.first_interest,
+        interest_basis=body.interest_basis,
         pay_from_id=pay_from.id if pay_from else None,
         paid_before=0,
         notes=(body.notes or "").strip() or None,
@@ -194,12 +212,15 @@ def create_loan(body: LoanIn, db: Session = Depends(get_db)) -> LoanDetail:
         if not body.principal:
             raise _bad("Enter the loan amount to record the money received.")
         into = _bank(db, body.received_into_id, "the loan money came into")
+        charges = body.charges or 0
+        if charges >= body.principal:
+            raise _bad("The charges must be less than the loan amount.")
         _new_txn(
             db,
             {
                 "type": "transfer",
                 "date": on,
-                "amount": body.principal,
+                "amount": body.principal - charges,  # what reached the bank: its statement shows the same
                 "description": f"Loan received: {acct.name}",
                 "source_id": acct.id,
                 "destination_id": into.id,
@@ -207,6 +228,21 @@ def create_loan(body: LoanIn, db: Session = Depends(get_db)) -> LoanDetail:
             loan,
             "disbursal",
         )
+        if charges:  # processing fee, GST, insurance … kept by the lender: paid out of the loan
+            _new_txn(
+                db,
+                {
+                    "type": "withdrawal",
+                    "date": on,
+                    "amount": charges,
+                    "description": f"Loan charges: {acct.name}",
+                    "source_id": acct.id,
+                    "destination_name": (body.lender or acct.name).strip(),
+                    "category_id": category_id(db, FEE_CATEGORY),
+                },
+                loan,
+                "charges",
+            )
     elif body.start == "new" and body.money == "seller" and body.count_mode == "interest_only":
         if not body.principal:
             raise _bad("Enter the loan amount.")
@@ -265,7 +301,10 @@ def update_loan(account_id: int, body: LoanPatch, db: Session = Depends(get_db))
         loan.notes = (data["notes"] or "").strip() or None
     if "closed_on" in data:
         loan.closed_on = data["closed_on"]
-    terms = ("method", "principal", "rate", "tenure", "emi", "first_emi_date", "disbursed_date", "first_interest")
+    terms = (
+        "method", "principal", "rate", "tenure", "emi", "first_emi_date", "disbursed_date", "first_interest",
+        "interest_basis",
+    )  # fmt: skip
     if any(k in data for k in terms):
         method = data.get("method") or loan.method
         principal = data.get("principal", loan.principal)
@@ -274,6 +313,7 @@ def update_loan(account_id: int, body: LoanPatch, db: Session = Depends(get_db))
         first = data.get("first_emi_date") or loan.first_emi_date
         taken_on = data.get("disbursed_date", loan.disbursed_date)
         first_mode = data.get("first_interest") or loan.first_interest
+        basis = data.get("interest_basis") or loan.interest_basis
         if taken_on and taken_on > first:
             raise _bad("The loan must be taken on or before the first EMI date.")
         by_days = method == "reducing" and first_mode != "month"
@@ -293,11 +333,11 @@ def update_loan(account_id: int, body: LoanPatch, db: Session = Depends(get_db))
                 emi = flat_emi(principal, rate_bp, tenure)
         emi = emi or loan.emi
         try:
-            schedule_for(method, principal, rate_bp, emi, tenure, first, bpi)
+            schedule_for(method, principal, rate_bp, emi, tenure, first, bpi, daily=basis == "days365")
         except ValueError as e:
             raise _bad(str(e)) from e
         loan.method, loan.principal, loan.tenure, loan.emi, loan.first_emi_date = method, principal, tenure, emi, first
-        loan.disbursed_date, loan.first_interest = taken_on, first_mode
+        loan.disbursed_date, loan.first_interest, loan.interest_basis = taken_on, first_mode, basis
         loan.rate_bp = rate_bp if method != "emi_only" else None
         if not supports_changes(loan) and loan.events:
             raise _bad("Remove the part-payments and rate changes first — they need a reducing-balance loan.")
@@ -399,11 +439,40 @@ def _event(loan: Loan, event_id: int) -> LoanEvent:
     return ev
 
 
+@router.get("/{account_id}/payoff", response_model=PayoffOut)
+def payoff(account_id: int, on: date = Query(...), db: Session = Depends(get_db)) -> PayoffOut:
+    """What was left to repay on a day — the most a payment closing the loan clears."""
+    loan = _get(db, account_id)
+    if not supports_changes(loan):
+        raise _bad("Closing early works on reducing-balance loans (with an amount and a rate).")
+    return PayoffOut(date=on, left=principal_left(loan, on))
+
+
+@router.post("/{account_id}/close", response_model=LoanDetail)
+def close(account_id: int, body: CloseIn, db: Session = Depends(get_db)) -> LoanDetail:
+    """The loan paid off early (foreclosed) with one payment."""
+    loan = _get(db, account_id)
+    if not supports_changes(loan):
+        raise _bad("Closing early works on reducing-balance loans (with an amount and a rate).")
+    existing = db.get(Transaction, body.transaction_id) if body.transaction_id else None
+    if body.transaction_id and existing is None:
+        raise _bad("That transaction no longer exists.")
+    src = None
+    if existing is None:
+        src = db.get(Account, body.from_account_id or loan.pay_from_id or -1)
+    close_loan(db, loan, body.date, body.amount, from_account=src, existing=existing)
+    db.commit()
+    db.refresh(loan)
+    return loan_out(db, loan, detail=True)  # type: ignore[return-value]
+
+
 @router.patch("/{account_id}/events/{event_id}", response_model=LoanDetail)
 def change_event(account_id: int, event_id: int, body: EventPatch, db: Session = Depends(get_db)) -> LoanDetail:
     """Switch a part-payment / rate change between keeping the EMI and keeping the end date."""
     loan = _get(db, account_id)
     ev = _event(loan, event_id)
+    if ev.mode == "close":
+        raise _bad("A loan closed early has no EMIs left to switch.")
     old = ev.mode
     ev.mode = body.mode
     try:
@@ -516,7 +585,7 @@ def delete_loan(account_id: int, db: Session = Depends(get_db)) -> None:
     emi_cat = category_id(db, EMI_CATEGORY)
     payee = None
     for t in db.scalars(select(Transaction).where(Transaction.loan_id == loan.id)).unique():
-        if t.loan_part == "disbursal":
+        if t.loan_part in ("disbursal", "charges"):
             db.delete(t)
             continue
         if t.loan_part == "principal":

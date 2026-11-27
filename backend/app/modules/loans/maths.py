@@ -42,6 +42,19 @@ def month_interest(balance: int, rate_bp: int) -> int:
     return (balance * rate_bp + 60_000) // 120_000
 
 
+INTEREST_BASIS = ("month", "days365")
+
+
+def period_interest(balance: int, rate_bp: int, due: date, daily: bool) -> int:
+    """The interest charged with the EMI due on `due`: a month's (rate/12), or — `daily`, as some
+    lenders (e.g. Bandhan) do — the actual days since the previous due date on a 365-day year,
+    so February costs less than March. Rounded half up to the paisa."""
+    if not daily:
+        return month_interest(balance, rate_bp)
+    days = (due - add_months(due, -1)).days
+    return (balance * rate_bp * days + 1_825_000) // 3_650_000  # x rate/100/100 x days/365
+
+
 def round_rupee(paise: Decimal | int) -> int:
     return int((Decimal(paise) / 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)) * 100
 
@@ -92,14 +105,19 @@ def build(
     anchor: date,
     start_n: int = 1,
     first_interest: int | None = None,
+    daily: bool = False,
 ) -> list[Row]:
     """Reducing-balance schedule from `balance`, paying `emi` monthly for at most `months`
     EMIs; the last one clears whatever is left. Dates are anchor + (n-1) months.
-    `first_interest` replaces the month's interest of EMI 1 (see first_emi_interest)."""
+    `first_interest` replaces the month's interest of EMI 1 (see first_emi_interest);
+    `daily` charges each month's interest on its actual days (see period_interest)."""
     rows: list[Row] = []
     n = start_n
     while balance > 0 and len(rows) < min(months, MAX_MONTHS):
-        interest = first_interest if n == 1 and first_interest is not None else month_interest(balance, rate_bp)
+        due = add_months(anchor, n - 1)
+        interest = (
+            first_interest if n == 1 and first_interest is not None else period_interest(balance, rate_bp, due, daily)
+        )
         last = len(rows) == months - 1
         principal = emi - interest
         if principal <= 0 and not last:
@@ -167,8 +185,10 @@ def schedule_for(
     months: int,
     first: date,
     first_interest: int | None = None,
+    daily: bool = False,
 ) -> list[Row]:
-    """`first_interest` (EMI 1 counted by days) applies to reducing-balance loans only."""
+    """`first_interest` (EMI 1 counted by days) and `daily` (each month's interest on its days)
+    apply to reducing-balance loans only."""
     if method == "flat":
         return build_flat(principal or 0, rate_bp or 0, months, first, emi)
     if method == "emi_only" and not principal:
@@ -176,10 +196,12 @@ def schedule_for(
     if method == "emi_only":
         rate_bp = implied_rate_bp(principal, emi, months)
     bpi = first_interest if method == "reducing" else None
-    return build(principal or 0, rate_bp or 0, emi, months, first, first_interest=bpi)
+    return build(
+        principal or 0, rate_bp or 0, emi, months, first, first_interest=bpi, daily=daily and method == "reducing"
+    )
 
 
-def what_if(rows: list[Row], paid: int, rate_bp: int, emi: int, amount: int, mode: str) -> dict:
+def what_if(rows: list[Row], paid: int, rate_bp: int, emi: int, amount: int, mode: str, daily: bool = False) -> dict:
     """Part-payment of `amount` made just before the next EMI (reducing balance).
     `mode`: reduce_tenure (same EMI, fewer months) or reduce_emi (same months, lower EMI)."""
     left = rows[paid:]
@@ -193,7 +215,7 @@ def what_if(rows: list[Row], paid: int, rate_bp: int, emi: int, amount: int, mod
     else:
         new_emi = emi if mode == "reduce_tenure" else calc_emi(new_balance, rate_bp, len(left))
         anchor = add_months(left[0].date, -(left[0].n - 1))
-        new_rows = build(new_balance, rate_bp, new_emi, len(left), anchor, left[0].n)
+        new_rows = build(new_balance, rate_bp, new_emi, len(left), anchor, left[0].n, daily=daily)
         after = {
             "emi": new_emi,
             "months": len(new_rows),
@@ -233,6 +255,7 @@ def build_events(
     first: date,
     events: list[Event],
     first_interest: int | None = None,
+    daily: bool = False,
 ) -> tuple[list[Row], list[tuple[Event, int, int]]]:
     """Reducing-balance schedule with part-payments and rate changes. Returns the rows and,
     for each event applied, (event, EMI number it applies before, EMI after it).
@@ -255,9 +278,11 @@ def build_events(
             applied.append((ev, n, emi))
         if balance <= 0:
             break
-        interest = first_interest if n == 1 and first_interest is not None else month_interest(balance, rate_bp)
+        interest = (
+            first_interest if n == 1 and first_interest is not None else period_interest(balance, rate_bp, d, daily)
+        )
         principal_part = emi - interest
-        last_planned = n >= tenure and not any(m == "reduce_tenure" for m in (e.mode for e, _, _ in applied))
+        last_planned = n >= tenure and not any(m in ("reduce_tenure", "close") for m in (e.mode for e, _, _ in applied))
         if principal_part <= 0 and not last_planned:
             raise ValueError(
                 f"From {d:%b %Y} the EMI doesn't cover the monthly interest — choose to change the EMI instead."

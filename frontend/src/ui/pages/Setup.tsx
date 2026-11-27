@@ -17,6 +17,7 @@ import { LoanStatementDialog } from '../shared/LoanStatement';
 import { InvestmentForm, KIND_META } from '../shared/InvestmentForm';
 import { UploadStatement } from '../shared/UploadStatement';
 import { GmailCard } from '../shared/GmailCard';
+import { GetCasDialog } from '../shared/GetCas';
 
 type StepKey = 'welcome' | 'banks' | 'cards' | 'loans' | 'funds' | 'investments' | 'essentials' | 'statements' | 'done';
 
@@ -295,7 +296,7 @@ function Loans() {
 
 function Funds() {
   const list = useApi<Investment[]>('/investments');
-  const [form, setForm] = useState<'cas' | 'hand' | null>(null);
+  const [form, setForm] = useState<'cas' | 'hand' | 'get' | null>(null);
   const funds = list.data?.filter((x) => x.kind === 'mf');
   return (
     <>
@@ -307,8 +308,10 @@ function Funds() {
       <div className="setup-add">
         <Button variant="secondary" icon="file-up" onClick={() => setForm('cas')}>Import CAS</Button>
         <Button variant="ghost" icon="plus" onClick={() => setForm('hand')}>Add a fund by hand</Button>
+        <Button variant="ghost" icon="external-link" onClick={() => setForm('get')}>How do I get a CAS?</Button>
       </div>
       <div className="hint" style={{ marginTop: 8 }}>The CAS opens its review page; a button there brings you back here.</div>
+      {form === 'get' && <GetCasDialog onClose={() => setForm(null)} />}
       {form === 'cas' && <UploadStatement cas onClose={() => setForm(null)} />}
       {form === 'hand' && <InvestmentForm onClose={() => setForm(null)} />}
     </>

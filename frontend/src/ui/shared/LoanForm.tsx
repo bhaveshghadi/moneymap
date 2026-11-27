@@ -1,7 +1,7 @@
 'use client';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Account, Category, LoanCountMode, LoanDetail, LoanFirstInterest, LoanKind, LoanLinkable, LoanMethod, LoanStatementResult } from '../lib/types';
+import type { Account, Category, LoanCountMode, LoanDetail, LoanFirstInterest, LoanInterestBasis, LoanKind, LoanLinkable, LoanMethod, LoanStatementResult } from '../lib/types';
 import { api, qs } from '../lib/api';
 import { fmtDate, inr, paiseToInput, rs, toPaise, todayIso } from '../lib/format';
 import { useApi, useShell } from '../contexts/ShellCtx';
@@ -41,6 +41,11 @@ export const METHOD_LABEL: Record<LoanMethod, string> = {
 export const COUNT_LABEL: Record<LoanCountMode, string> = {
   whole_emi: 'Whole EMI counts as spending',
   interest_only: 'Only the interest counts as spending',
+};
+
+export const INTEREST_BASIS_LABEL: Record<LoanInterestBasis, string> = {
+  month: '1/12 of the yearly rate (usual)',
+  days365: 'Actual days in the month — 365-day year',
 };
 
 export const FIRST_INTEREST_LABEL: Record<LoanFirstInterest, string> = {
@@ -88,15 +93,37 @@ export interface SchedulePreview {
   lastEmi: number;
 }
 
+/** Days from the EMI before to EMI n+1 (0-based n), the first EMI on `first` (YYYY-MM-DD). */
+function periodDays(first: string, n: number): number {
+  const [y, m, d] = first.split('-').map(Number);
+  const due = (k: number) => {
+    const last = new Date(Date.UTC(y, m - 1 + k + 1, 0)).getUTCDate(); // days in that month
+    return Date.UTC(y, m - 1 + k, Math.min(d, last));
+  };
+  return Math.round((due(n) - due(n - 1)) / 86_400_000);
+}
+
 /** Walk the reducing-balance schedule like maths.build (null if the EMI doesn't cover the interest). */
-export function reducingPreview(principal: number, rateBp: number, emi: number, months: number, firstInterest: number | null): SchedulePreview | null {
+export function reducingPreview(
+  principal: number,
+  rateBp: number,
+  emi: number,
+  months: number,
+  firstInterest: number | null,
+  daily: { first: string } | null = null, // each month's interest on its actual days (365-day year)
+): SchedulePreview | null {
   let balance = principal;
   let totalInterest = 0;
   let totalPayable = 0;
   let lastEmi = 0;
   let n = 0;
   while (balance > 0 && n < Math.min(months, 600)) {
-    const interest = n === 0 && firstInterest !== null ? firstInterest : Math.floor((balance * rateBp + 60_000) / 120_000);
+    const interest =
+      n === 0 && firstInterest !== null
+        ? firstInterest
+        : daily
+          ? Math.floor((balance * rateBp * periodDays(daily.first, n) + 1_825_000) / 3_650_000)
+          : Math.floor((balance * rateBp + 60_000) / 120_000);
     const last = n === months - 1;
     let prin = emi - interest;
     if (prin <= 0 && !last) return null;
@@ -153,10 +180,12 @@ function startValues(st?: LoanStatementResult) {
     firstEmi: first,
     disbursed: v<string>('disbursed_date') ?? '',
     firstInterest: (v<string>('first_interest') ?? 'month') as LoanFirstInterest,
+    interestBasis: (v<string>('interest_basis') ?? 'month') as LoanInterestBasis,
     payFrom: '',
     start: (st && ((paid ?? 0) > 0 || (first && first <= todayIso())) ? 'existing' : 'new') as 'new' | 'existing',
     money: 'none' as 'received' | 'seller' | 'none',
     receivedInto: '',
+    charges: '',
     seller: '',
     categoryId: '',
     paidBefore: paid !== null ? String(paid) : '',
@@ -201,7 +230,8 @@ export function LoanFormBody({ initial, banner }: { initial?: LoanStatementResul
   // the same totals the loan page will show (reducing: the schedule walked month by month)
   let preview: SchedulePreview | null = null;
   if (f.method === 'reducing') {
-    if (principal && emi && tenure) preview = reducingPreview(principal, rateBp, emi, tenure, bpi);
+    if (principal && emi && tenure)
+      preview = reducingPreview(principal, rateBp, emi, tenure, bpi, f.interestBasis === 'days365' && f.firstEmi ? { first: f.firstEmi } : null);
   } else if (f.method === 'flat') {
     if (principal && tenure) {
       // an EMI you enter (the lender's) sets the total, like maths.build_flat
@@ -230,6 +260,8 @@ export function LoanFormBody({ initial, banner }: { initial?: LoanStatementResul
     if (f.method === 'emi_only' && !ownEmi) return setError('Enter the EMI.');
     if (f.method === 'reducing' && f.firstInterest !== 'month' && !f.disbursed) return setError('Enter the date the loan was taken on — the first EMI’s interest is counted from it.');
     if (f.start === 'new' && f.money === 'received' && !f.receivedInto) return setError('Choose the account the loan money came into.');
+    const charges = f.start === 'new' && f.money === 'received' && f.charges ? toPaise(f.charges) : null;
+    if (charges !== null && (charges < 0 || (principal > 0 && charges >= principal))) return setError('The charges must be less than the loan amount.');
     const link_ids = f.start === 'existing' ? (candidates.data ?? []).filter((c) => c.emi_like && isPicked(c)).map((c) => c.transaction_id) : [];
     const body = {
       name: f.name.trim(),
@@ -245,10 +277,12 @@ export function LoanFormBody({ initial, banner }: { initial?: LoanStatementResul
       first_emi_date: f.firstEmi,
       disbursed_date: f.disbursed || null,
       first_interest: f.method === 'reducing' ? f.firstInterest : 'month',
+      interest_basis: f.method === 'reducing' ? f.interestBasis : 'month',
       pay_from_id: f.payFrom ? Number(f.payFrom) : null,
       start: f.start,
       money: f.start === 'new' ? f.money : 'none',
       received_into_id: f.money === 'received' && f.receivedInto ? Number(f.receivedInto) : null,
+      charges: charges || null,
       seller_name: f.seller || null,
       category_id: f.categoryId ? Number(f.categoryId) : null,
       paid_before: f.start === 'existing' && f.paidBefore ? Number(f.paidBefore) : null,
@@ -385,6 +419,15 @@ export function LoanFormBody({ initial, banner }: { initial?: LoanStatementResul
               </div>
             </div>
           )}
+          {f.method === 'reducing' && (
+            <div className="field">
+              <label htmlFor="ln-basis">Interest each month {tag('interest_basis')}</label>
+              <select id="ln-basis" className="inp" value={f.interestBasis} onChange={(e) => set('interestBasis', e.target.value as LoanInterestBasis)}>
+                {(Object.keys(INTEREST_BASIS_LABEL) as LoanInterestBasis[]).map((k) => <option key={k} value={k}>{INTEREST_BASIS_LABEL[k]}</option>)}
+              </select>
+              <div className="hint">Most lenders charge 1/12 of the yearly rate. Some (e.g. Bandhan) count the actual days, so February costs less than March — read it from the lender&apos;s schedule.</div>
+            </div>
+          )}
           {f.method === 'reducing' && f.firstInterest !== 'month' && (
             <div className="hint" style={{ marginTop: -6, marginBottom: 10 }}>
               Many lenders charge the first EMI the interest for the actual days from the loan being paid out to the first EMI — check the first row of the lender’s schedule.
@@ -470,6 +513,28 @@ export function LoanFormBody({ initial, banner }: { initial?: LoanStatementResul
                 ) : (
                   <input className="inp" type="date" aria-label="Received on" value={f.disbursed} onChange={(e) => set('disbursed', e.target.value)} />
                 )}
+              </div>
+            )}
+            {f.money === 'received' && (
+              <div style={{ marginTop: 8 }}>
+                <input
+                  className="inp"
+                  inputMode="decimal"
+                  aria-label="Charges deducted by the lender"
+                  placeholder="Charges deducted by the lender (₹, optional)"
+                  value={f.charges}
+                  onChange={(e) => set('charges', e.target.value)}
+                />
+                <div className="hint">
+                  {principal > 0 && f.charges && (toPaise(f.charges) ?? 0) > 0 && (toPaise(f.charges) ?? 0) < principal ? (
+                    <>
+                      {money(principal - (toPaise(f.charges) ?? 0))} reaches your bank; {money(toPaise(f.charges) ?? 0)}{' '}is recorded as a
+                      “Bank Charges &amp; Fees” expense. You still owe the full {money(principal)}.
+                    </>
+                  ) : (
+                    'Processing fee, GST, insurance … that the lender kept: the loan amount minus what reached your bank.'
+                  )}
+                </div>
               </div>
             )}
             {f.money === 'seller' && f.countMode === 'interest_only' && (

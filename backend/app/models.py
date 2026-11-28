@@ -8,7 +8,13 @@ from .modules.budgets.models import Budget, BudgetCategory, BudgetLimit, BudgetM
 from .modules.cards.models import CardCycleRule, CardEmi, CreditCard  # noqa: F401
 from .modules.categories.models import Category, Tag  # noqa: F401
 from .modules.emergency.models import EmergencyFund  # noqa: F401
-from .modules.gmail.models import GmailAccount, GmailAttachment, GmailMessage, GmailRun  # noqa: F401
+from .modules.gmail.models import (  # noqa: F401
+    GmailAccount,
+    GmailAttachment,
+    GmailMailbox,
+    GmailMessage,
+    GmailRun,
+)
 from .modules.investments.models import (  # noqa: F401
     CasFund,
     CasImport,

@@ -33,7 +33,15 @@ log = logging.getLogger("moneymap.reset")
 router = APIRouter(prefix="/reset", tags=["reset"])
 
 # Tables a data-only reset keeps.
-KEEP_ON_DATA_RESET = {"user", "setting", "gmail_account", "gmail_run", "gmail_message", "gmail_attachment"}
+KEEP_ON_DATA_RESET = {
+    "user",
+    "setting",
+    "gmail_account",
+    "gmail_mailbox",
+    "gmail_run",
+    "gmail_message",
+    "gmail_attachment",
+}
 CONFIRM_WORD = "RESET"
 
 

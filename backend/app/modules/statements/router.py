@@ -550,6 +550,7 @@ def _fill_rows(imp: StatementImport, parsed, text: str) -> None:
 
 _CARRY = (
     "include",
+    "keep_duplicate",
     "kind",
     "category_id",
     "budget_id",
@@ -726,6 +727,8 @@ def edit_row(sid: int, rid: int, body: StatementRowPatch, db: Session = Depends(
         raise _bad("A loan link can only be removed here.")
     if "loan_id" in data:
         row.loan_action = None
+    if "include" in data:  # ticking in a row shown as already recorded: you mean it
+        row.keep_duplicate = bool(data["include"]) and row.duplicate_of is not None
     for k, v in data.items():
         setattr(row, k, v)
     # the link to an existing expense only holds for a transfer from that expense's account

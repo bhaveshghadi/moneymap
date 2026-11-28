@@ -362,3 +362,16 @@ def test_icici_op_history_download():
     assert "www.icici" not in " ".join(t.description for t in st.txns)  # page footer dropped
     assert st.txns[4].description == "UPI/Ravi Kumar/ravi@okhdfcb/UPI/HDFC"  # stops at the closing text
     assert balance_consistency(st) == 4 and balance_mismatches(st) == 0
+
+
+def test_icici_op_history_newer_heading_without_savings():
+    """Newer downloads say "Statement of Transactions in Account no. …" (no "Savings")."""
+    text = ICICI_OP_HISTORY.replace("in Saving Account no.", "in Account no.")
+    assert "in Account no. 000101234567" in text
+    st = parse_statement(text)
+    assert st.account_last4 == "4567"
+    assert [(t.date, t.amount) for t in st.txns] == [
+        ("2026-03-02", -4000), ("2026-03-03", -250000), ("2026-03-05", -120000),
+        ("2026-03-06", 5000000), ("2026-03-07", -30000),
+    ]
+    assert [t.name_hint for t in st.txns] == ["Tea Stall", "CRED Club", "Internet banking trxn", "Credit trxn", "Ravi Kumar"]

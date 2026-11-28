@@ -10,11 +10,12 @@ from datetime import datetime
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ...core.crypto import DecryptError
 from ..auth.models import Setting
-from .models import GmailAccount
+from .models import GmailAccount, GmailMailbox
 
 SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -65,9 +66,24 @@ def env_client() -> tuple[str, str] | None:
     return None
 
 
+def mailboxes(db: Session) -> list[GmailMailbox]:
+    """Every Gmail account connected (or connected before), oldest first."""
+    return list(db.scalars(select(GmailMailbox).order_by(GmailMailbox.id)))
+
+
+def connected_mailboxes(db: Session) -> list[GmailMailbox]:
+    return [m for m in mailboxes(db) if m.token]
+
+
+def drop_tokens(db: Session) -> None:
+    """A different OAuth client: every account's token belonged to the old one."""
+    for m in mailboxes(db):
+        m.token, m.connected_at = None, None
+
+
 def account(db: Session) -> GmailAccount | None:
-    """The Gmail row. With the client in the environment it's kept in step with it: a different
-    client id drops the old connection (its token belongs to the other client)."""
+    """The OAuth client row. With the client in the environment it's kept in step with it: a
+    different client id drops the connections (their tokens belong to the other client)."""
     acct = db.get(GmailAccount, 1)
     try:
         env = env_client()
@@ -87,7 +103,7 @@ def account(db: Session) -> GmailAccount | None:
         same_secret = False
     if acct.client_id != cid or not same_secret:
         if acct.client_id != cid:
-            acct.token, acct.email, acct.connected_at = None, None, None
+            drop_tokens(db)
         acct.client_id, acct.client_secret = cid, secret
         db.commit()
     return acct
@@ -182,28 +198,51 @@ def finish_consent(db: Session, code: str, state: str) -> str | None:
     if SCOPE not in tok.get("scope", SCOPE):
         raise GmailError("Gmail read access wasn't granted. Tick the Gmail permission on Google's consent screen.")
     tok["expires_at"] = time.time() + int(tok.get("expires_in", 3600))
-    acct.token = tok
-    acct.connected_at = datetime.now()
+    probe = GmailMailbox()  # not saved: only to ask Google which address this is
+    probe.token = tok
+    try:
+        email = (api_for(db, probe).profile().get("emailAddress") or "").strip()
+    except GmailError as e:
+        raise GmailError(f"Connected, but Gmail didn't say which account it is ({e}). Try again.") from None
+    if not email:
+        raise GmailError("Connected, but Gmail didn't say which account it is. Try again.")
+    # the same address again: its new token replaces the old one; another address: a new account
+    mb = db.scalar(select(GmailMailbox).where(func.lower(GmailMailbox.email) == email.lower()))
+    if mb is None:
+        mb = GmailMailbox(email=email)
+        db.add(mb)
+    mb.token, mb.connected_at = tok, datetime.now()
     db.delete(row)
     db.commit()
-    try:
-        acct.email = api_for(db).profile().get("emailAddress")
-        db.commit()
-    except GmailError:
-        pass
-    return acct.email
+    return email
 
 
-def disconnect(db: Session) -> None:
-    acct = account(db)
-    if acct and acct.token:
-        tok = acct.token
+def _revoke(mb: GmailMailbox) -> None:
+    tok = mb.token
+    if tok:
         with contextlib.suppress(httpx.HTTPError):  # best effort: revoke at Google too
             httpx.post(REVOKE_URL, data={"token": tok.get("refresh_token") or tok.get("access_token")}, timeout=10)
-        acct.token = None
-        acct.email = None
-        acct.connected_at = None
-        db.commit()
+
+
+def disconnect(db: Session, mailbox_id: int | None = None) -> None:
+    """Disconnect one account (or all): the token is revoked and forgotten; the account stays
+    listed, so its fetched emails still show where they came from."""
+    for mb in mailboxes(db):
+        if mailbox_id is None or mb.id == mailbox_id:
+            _revoke(mb)
+            mb.token, mb.connected_at = None, None
+    db.commit()
+
+
+def remove_mailbox(db: Session, mailbox_id: int) -> None:
+    """Take a disconnected account off the list. Its fetched emails stay in the Inbox."""
+    mb = db.get(GmailMailbox, mailbox_id)
+    if mb is None:
+        raise GmailError("That Gmail account isn't in the list.")
+    if mb.token:
+        raise GmailError("Disconnect it first.")
+    db.delete(mb)
+    db.commit()
 
 
 # ---------------------------------------------------------------- API
@@ -212,12 +251,18 @@ def disconnect(db: Session) -> None:
 class GmailAPI:
     """Thin read-only Gmail REST client with token refresh."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, mailbox: GmailMailbox | None = None):
         self.db = db
         acct = account(db)
-        if acct is None or not acct.token:
+        if acct is None:
             raise GmailError("Gmail isn't connected. Connect it in Settings.")
+        if mailbox is None:
+            mailbox = next(iter(connected_mailboxes(db)), None)
+        if mailbox is None or not mailbox.token:
+            who = f" ({mailbox.email})" if mailbox is not None and mailbox.email else ""
+            raise GmailError(f"Gmail{who} isn't connected. Connect it in Settings.")
         self.acct = acct
+        self.mailbox = mailbox
         self.http = httpx.Client(timeout=30)
 
     def _client_secret(self) -> str:
@@ -227,7 +272,7 @@ class GmailAPI:
             raise GmailError("The saved OAuth client can't be read any more. Paste the client JSON again.") from None
 
     def _token(self) -> str:
-        tok = dict(self.acct.token or {})
+        tok = dict(self.mailbox.token or {})
         if tok.get("expires_at", 0) - 60 < time.time():
             if not tok.get("refresh_token"):
                 raise GmailError("Gmail access expired. Reconnect Gmail in Settings.")
@@ -242,14 +287,16 @@ class GmailAPI:
             )
             tok.update(fresh)
             tok["expires_at"] = time.time() + int(fresh.get("expires_in", 3600))
-            self.acct.token = tok
-            self.db.commit()
+            self.mailbox.token = tok
+            if self.mailbox.id is not None:
+                self.db.commit()
         return tok["access_token"]
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         r = self.http.get(f"{API}{path}", params=params, headers={"Authorization": f"Bearer {self._token()}"})
         if r.status_code == 401:
-            raise GmailError("Google rejected the Gmail token. Reconnect Gmail in Settings.")
+            who = f" for {self.mailbox.email}" if self.mailbox.email else ""
+            raise GmailError(f"Google rejected the Gmail token{who}. Reconnect it in Settings.")
         if r.status_code >= 400:
             try:
                 msg = r.json()["error"]["message"]
@@ -282,6 +329,6 @@ class GmailAPI:
         return base64.urlsafe_b64decode(data["data"] + "=" * (-len(data["data"]) % 4))
 
 
-def api_for(db: Session) -> GmailAPI:
-    """Factory (tests replace this with a fake)."""
-    return GmailAPI(db)
+def api_for(db: Session, mailbox: GmailMailbox | None = None) -> GmailAPI:
+    """Factory (tests replace this with a fake). No mailbox: the first connected one."""
+    return GmailAPI(db, mailbox)

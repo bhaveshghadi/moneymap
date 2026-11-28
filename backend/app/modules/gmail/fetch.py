@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from ...config import get_settings
 from ...db import SessionLocal
 from . import client as gclient
-from .models import GmailAttachment, GmailMessage, GmailRun
+from .models import GmailAttachment, GmailMailbox, GmailMessage, GmailRun
 
 log = logging.getLogger("moneymap.gmail")
 PACK_DIR = Path(__file__).resolve().parents[3] / "packs" / "in"  # backend/packs/in
@@ -169,54 +169,95 @@ def _last4_owners(db: Session) -> dict[str, str]:
     return out
 
 
-def estimate(db: Session, template_ids: list[str], custom: list[str], date_from: date, date_to: date) -> GmailRun:
-    """List matching ids per query and, for the new ones, their sender, subject, date and size
-    (headers only — nothing downloaded), so you can pick what to fetch. Ones already in the Inbox
-    are listed too, from what's stored."""
+def chosen_mailboxes(db: Session, mailbox_ids: list[int] | None) -> list[GmailMailbox]:
+    """The connected accounts to search: the ones picked, or all of them."""
+    boxes = gclient.connected_mailboxes(db)
+    if mailbox_ids is not None:
+        boxes = [b for b in boxes if b.id in set(mailbox_ids)]
+        if not boxes:
+            raise gclient.GmailError("Tick at least one connected Gmail account.")
+    if not boxes:
+        raise gclient.GmailError("Gmail isn't connected. Connect it in Settings.")
+    return boxes
+
+
+def estimate(
+    db: Session,
+    template_ids: list[str],
+    custom: list[str],
+    date_from: date,
+    date_to: date,
+    mailbox_ids: list[int] | None = None,
+) -> GmailRun:
+    """List matching ids per query in each account and, for the new ones, their sender, subject,
+    date and size (headers only — nothing downloaded), so you can pick what to fetch. Ones already
+    in the Inbox are listed too, from what's stored; so is an email that reached two accounts
+    (same Message-ID) — it's fetched once."""
     if date_to < date_from:
         raise gclient.GmailError("The end date is before the start date.")
     queries = build_queries(template_ids, custom, date_from, date_to)
-    api = gclient.api_for(db)
+    boxes = chosen_mailboxes(db, mailbox_ids)
     known = set(db.scalars(select(GmailMessage.id)))
+    stored_rfc = dict(
+        db.execute(
+            select(GmailMessage.rfc_id, GmailMailbox.email)
+            .outerjoin(GmailMailbox, GmailMailbox.id == GmailMessage.mailbox_id)
+            .where(GmailMessage.rfc_id.is_not(None))
+        ).all()
+    )
     pending: list[list] = []
-    hits: list[tuple[str, int]] = []
+    hits: list[tuple[str, int, GmailMailbox]] = []
+    metas: dict[str, dict] = {}
     seen: set[str] = set()
     matched = 0
-    for qi, q in enumerate(queries):
-        for mid in api.list_ids(q["query"]):
-            if mid in seen:
-                continue
-            seen.add(mid)
-            matched += 1
-            hits.append((mid, qi))
-            if mid not in known:
-                pending.append([mid, qi])
-    # Refresh the token once up front: the worker threads must not each try
-    # to refresh it (they share one DB session).
-    getattr(api, "_token", lambda: None)()
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        metas = dict(
-            zip([p[0] for p in pending], pool.map(lambda p: api.get_message(p[0], "metadata"), pending), strict=True)
-        )
-    sizes = [int(m.get("sizeEstimate", 0)) for m in metas.values()]
+    for box in boxes:
+        api = gclient.api_for(db, box)
+        mine: list[str] = []
+        for qi, q in enumerate(queries):
+            for mid in api.list_ids(q["query"]):
+                if mid in seen:
+                    continue
+                seen.add(mid)
+                matched += 1
+                hits.append((mid, qi, box))
+                if mid not in known:
+                    mine.append(mid)
+        # Refresh the token once up front: the worker threads must not each try
+        # to refresh it (they share one DB session).
+        getattr(api, "_token", lambda: None)()
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            metas.update(zip(mine, pool.map(lambda mid, a=api: a.get_message(mid, "metadata"), mine), strict=True))
     found = []
-    for mid, qi in hits:
+    rfc_here: dict[str, str | None] = {}  # Message-ID -> the account it's fetched from in this run
+    for mid, qi, box in hits:
+        base = {"id": mid, "q": qi, "mb": box.id, "mailbox": box.email, "dup": None}
         if mid in metas:
             m = metas[mid]
             payload = m.get("payload", {})
             sent = datetime.fromtimestamp(int(m["internalDate"]) / 1000) if m.get("internalDate") else None
+            rfc = (_header(payload, "Message-ID") or _header(payload, "Message-Id") or "").strip() or None
+            dup = None
+            if rfc and rfc in stored_rfc:
+                dup = stored_rfc[rfc] or "another account"
+            elif rfc and rfc in rfc_here:
+                dup = rfc_here[rfc] or "another account"
+            elif rfc:
+                rfc_here[rfc] = box.email
             found.append({
-                "id": mid, "q": qi, "from": _header(payload, "From"), "subject": _header(payload, "Subject"),
+                **base, "from": _header(payload, "From"), "subject": _header(payload, "Subject"),
                 "date": sent.isoformat(timespec="minutes") if sent else None,
-                "size": int(m.get("sizeEstimate", 0)), "known": False,
+                "size": int(m.get("sizeEstimate", 0)), "known": dup is not None, "dup": dup,
             })  # fmt: skip
+            if dup is None:
+                pending.append([mid, qi, box.id])
         else:
             g = db.get(GmailMessage, mid)
             found.append({
-                "id": mid, "q": qi, "from": g.from_addr if g else None, "subject": g.subject if g else None,
+                **base, "from": g.from_addr if g else None, "subject": g.subject if g else None,
                 "date": g.sent_at.isoformat(timespec="minutes") if g and g.sent_at else None,
                 "size": g.size_estimate if g else 0, "known": True,
             })  # fmt: skip
+    sizes = [f["size"] for f in found if not f["known"]]
     # which account / card each one is for: the last 4 digits in the subject or the preview text
     snippets = {mid: m.get("snippet") for mid, m in metas.items()}
     owners = _last4_owners(db)
@@ -225,11 +266,13 @@ def estimate(db: Session, template_ids: list[str], custom: list[str], date_from:
         text = f"{f['subject'] or ''} {html.unescape(snippets.get(f['id']) or (g.snippet if g else '') or '')}"
         f["last4"] = last4_of(text)
         f["account"] = owners.get(f["last4"]) if f["last4"] else None
-    found.sort(key=lambda f: (f["q"], f["date"] or ""), reverse=False)
+    order = {b.id: i for i, b in enumerate(boxes)}
+    found.sort(key=lambda f: (order.get(f["mb"], 0), f["q"], f["date"] or ""))
     run = GmailRun(
         status="estimated",
         date_from=date_from,
         date_to=date_to,
+        mailbox_ids=[b.id for b in boxes],
         queries=queries,
         pending_ids=pending,
         found=found,
@@ -294,7 +337,9 @@ def _safe_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name)[-120:] or "attachment"
 
 
-def store_message(db: Session, api, mid: str, query: dict, run: GmailRun) -> tuple[int, int]:
+def store_message(
+    db: Session, api, mid: str, query: dict, run: GmailRun, mailbox_id: int | None = None
+) -> tuple[int, int]:
     """Fetch one message + its attachments into the DB/disk. Returns (attachments, bytes)."""
     msg = api.get_message(mid, "full")
     payload = msg.get("payload", {}) or {}
@@ -303,6 +348,8 @@ def store_message(db: Session, api, mid: str, query: dict, run: GmailRun) -> tup
     m = GmailMessage(
         id=mid,
         thread_id=msg.get("threadId"),
+        mailbox_id=mailbox_id,
+        rfc_id=((_header(payload, "Message-ID") or _header(payload, "Message-Id") or "").strip()[:255] or None),
         run_id=run.id,
         from_addr=(_header(payload, "From") or "")[:320] or None,
         subject=(_header(payload, "Subject") or "")[:500] or None,
@@ -373,16 +420,25 @@ def _fetch_worker(run_id: int) -> None:
     with SessionLocal() as db:
         run = db.get(GmailRun, run_id)
         try:
-            api = gclient.api_for(db)
+            apis: dict[int | None, object] = {}
+
+            def api_of(mb_id: int | None):
+                if mb_id not in apis:
+                    box = db.get(GmailMailbox, mb_id) if mb_id is not None else None
+                    apis[mb_id] = gclient.api_for(db, box)
+                return apis[mb_id]
+
             total = len(run.pending_ids)
             remaining = list(run.pending_ids)
-            for i, (mid, qi) in enumerate(list(remaining), 1):
+            for i, item in enumerate(list(remaining), 1):
+                mid, qi = item[0], item[1]
+                mb_id = item[2] if len(item) > 2 else None  # fetches from before several accounts
                 db.refresh(run)
                 if run.status == "cancelling":
                     run.status = "cancelled"
                     break
                 if db.get(GmailMessage, mid) is None:
-                    n, b = store_message(db, api, mid, run.queries[qi], run)
+                    n, b = store_message(db, api_of(mb_id), mid, run.queries[qi], run, mb_id)
                     run.message_count += 1
                     run.attachment_count += n
                     run.bytes_downloaded += b
@@ -393,9 +449,10 @@ def _fetch_worker(run_id: int) -> None:
             else:
                 run.status = "done"
                 run.progress = f"Fetched {run.message_count} email(s), {run.attachment_count} attachment(s)"
-                acct = gclient.account(db)
-                if acct and (acct.last_fetch_to is None or run.date_to > acct.last_fetch_to):
-                    acct.last_fetch_to = run.date_to
+                for mb_id in run.mailbox_ids or []:
+                    box = db.get(GmailMailbox, mb_id)
+                    if box is not None and (box.last_fetch_to is None or run.date_to > box.last_fetch_to):
+                        box.last_fetch_to = run.date_to
             run.finished_at = datetime.now()
             db.commit()
         except Exception as e:  # keep what was fetched; report the error

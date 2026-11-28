@@ -25,15 +25,25 @@ class GmailConnectOut(BaseModel):
     direct: bool  # False: the browser isn't on the server's machine — paste the URL back
 
 
+class GmailMailboxOut(BaseModel):
+    id: int
+    email: str | None
+    connected: bool
+    connected_at: str | None = None
+    last_fetch_to: Date | None = None
+    emails: int = 0  # fetched into the Inbox from this account
+
+
 class GmailStatus(BaseModel):
     client_configured: bool
     client_from_env: bool = False  # set in MONEYMAP_GOOGLE_CLIENT_JSON: not pasted or removed in Settings
     client_env_error: str | None = None  # set but unreadable
     client_id_hint: str | None = None
-    connected: bool
-    email: str | None = None
+    connected: bool  # at least one account connected
+    email: str | None = None  # the first connected account
     connected_at: str | None = None
-    last_fetch_to: Date | None = None
+    last_fetch_to: Date | None = None  # the earliest "fetched up to" of the connected accounts
+    mailboxes: list[GmailMailboxOut] = []
     consent_threshold_mb: int
 
 
@@ -50,6 +60,11 @@ class GmailEstimateIn(BaseModel):
     custom: list[str] = []
     date_from: Date
     date_to: Date
+    mailbox_ids: list[int] | None = None  # the accounts to search (None: every connected one)
+
+
+class GmailDisconnectIn(BaseModel):
+    mailbox_id: int | None = None  # None: every account
 
 
 class GmailRunOut(ORM):
@@ -58,7 +73,8 @@ class GmailRunOut(ORM):
     date_from: Date
     date_to: Date
     queries: list[dict]
-    found: list[dict] = []  # {id, q, from, subject, date, size, known}
+    mailbox_ids: list[int] = []
+    found: list[dict] = []  # {id, q, mb, mailbox, from, subject, date, size, known, dup}
     matched_count: int
     new_count: int
     bytes_estimated: int
@@ -85,6 +101,8 @@ class AttachmentOut(ORM):
 
 class InboxItem(ORM):
     id: str
+    mailbox_id: int | None = None
+    mailbox_email: str | None = None  # the Gmail account it came from
     from_addr: str | None
     subject: str | None
     sent_at: datetime | None

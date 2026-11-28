@@ -84,6 +84,7 @@ class StatementRow(Base):
     duplicate_of: Mapped[int | None] = mapped_column(
         ForeignKey("transaction.id", ondelete="SET NULL", name="fk_statement_row_duplicate_of_transaction")
     )
+    keep_duplicate: Mapped[bool] = mapped_column(Boolean, default=False)  # ticked although already recorded
     transaction_id: Mapped[int | None] = mapped_column(
         ForeignKey("transaction.id", ondelete="SET NULL", name="fk_statement_row_transaction_id_transaction")
     )

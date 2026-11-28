@@ -451,15 +451,26 @@ export interface GmailRef {
   from_addr: string | null;
 }
 
+/** One Gmail account connected (or connected before) under your Google client. */
+export interface GmailMailbox {
+  id: number;
+  email: string | null;
+  connected: boolean;
+  connected_at: string | null;
+  last_fetch_to: string | null;
+  emails: number; // fetched into the Inbox from it
+}
+
 export interface GmailStatus {
   client_configured: boolean;
   client_from_env: boolean; // MONEYMAP_GOOGLE_CLIENT_JSON on the server: nothing to paste here
   client_env_error: string | null;
   client_id_hint: string | null;
-  connected: boolean;
-  email: string | null;
+  connected: boolean; // at least one account
+  email: string | null; // the first connected account
   connected_at: string | null;
-  last_fetch_to: string | null;
+  last_fetch_to: string | null; // the earliest of the connected accounts
+  mailboxes: GmailMailbox[];
   consent_threshold_mb: number;
 }
 
@@ -477,6 +488,7 @@ export interface GmailRun {
   date_from: string;
   date_to: string;
   queries: { label: string; provider_id: string | null; doc_type: string | null; query: string }[];
+  mailbox_ids: number[]; // the accounts searched
   found: GmailFound[]; // every email found, to pick what to fetch
   matched_count: number;
   new_count: number;
@@ -505,6 +517,8 @@ export interface InboxAttachment {
 
 export interface InboxItem {
   id: string;
+  mailbox_id: number | null;
+  mailbox_email: string | null; // the Gmail account it came from
   from_addr: string | null;
   subject: string | null;
   sent_at: string | null;
@@ -1084,6 +1098,9 @@ export interface PropertyPurchase {
 export interface GmailFound {
   id: string;
   q: number; // index into the run's queries
+  mb: number; // the Gmail account it was found in
+  mailbox: string | null; // that account's address
+  dup: string | null; // the same email was already fetched (or found) from this account
   from: string | null;
   subject: string | null;
   date: string | null; // ISO, minutes

@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ...core.once import one_at_a_time
@@ -8,12 +8,14 @@ from ...db import get_db
 from ..auth.security import current_user
 from . import client as gclient
 from . import fetch as gfetch
-from .models import GmailAccount, GmailRun
+from .models import GmailAccount, GmailMessage, GmailRun
 from .schemas import (
     GmailClientIn,
     GmailConnectIn,
     GmailConnectOut,
+    GmailDisconnectIn,
     GmailEstimateIn,
+    GmailMailboxOut,
     GmailPasteIn,
     GmailProvider,
     GmailRunOut,
@@ -47,15 +49,32 @@ def gmail_status(db: Session = Depends(get_db)) -> GmailStatus:
         from_env = gclient.env_client() is not None
     except gclient.GmailError as e:
         from_env, env_error = False, f"MONEYMAP_GOOGLE_CLIENT_JSON: {e}"
+    counts = dict(
+        db.execute(select(GmailMessage.mailbox_id, func.count()).group_by(GmailMessage.mailbox_id)).all()  # type: ignore[arg-type]
+    )
+    boxes = [
+        GmailMailboxOut(
+            id=m.id,
+            email=m.email,
+            connected=bool(m.token),
+            connected_at=m.connected_at.isoformat(timespec="seconds") if m.connected_at else None,
+            last_fetch_to=m.last_fetch_to,
+            emails=counts.get(m.id, 0),
+        )
+        for m in gclient.mailboxes(db)
+    ]
+    live = [b for b in boxes if b.connected]
+    fetched = [b.last_fetch_to for b in live]
     return GmailStatus(
         client_configured=acct is not None,
         client_from_env=from_env,
         client_env_error=env_error,
         client_id_hint=(acct.client_id[:12] + "…") if acct else None,
-        connected=bool(acct and acct.token),
-        email=acct.email if acct else None,
-        connected_at=acct.connected_at.isoformat(timespec="seconds") if acct and acct.connected_at else None,
-        last_fetch_to=acct.last_fetch_to if acct else None,
+        connected=bool(acct and live),
+        email=live[0].email if live else None,
+        connected_at=live[0].connected_at if live else None,
+        last_fetch_to=min(fetched) if fetched and all(fetched) else None,  # type: ignore[type-var]
+        mailboxes=boxes,
         consent_threshold_mb=gfetch.consent_threshold() // 1_000_000,
     )
 
@@ -72,8 +91,8 @@ def save_client(body: GmailClientIn, db: Session = Depends(get_db)) -> GmailStat
     if acct is None:
         db.add(GmailAccount(id=1, client_id=cid, client_secret=secret))
     else:
-        if acct.client_id != cid:  # a different client invalidates the old token
-            acct.token, acct.email, acct.connected_at = None, None, None
+        if acct.client_id != cid:  # a different client invalidates the old tokens
+            gclient.drop_tokens(db)
         acct.client_id, acct.client_secret = cid, secret
     db.commit()
     return gmail_status(db)
@@ -136,8 +155,21 @@ def paste_callback(body: GmailPasteIn, db: Session = Depends(get_db)) -> GmailSt
 
 
 @router.post("/disconnect", response_model=GmailStatus)
-def disconnect(db: Session = Depends(get_db)) -> GmailStatus:
-    gclient.disconnect(db)
+def disconnect(
+    body: GmailDisconnectIn = Body(default=GmailDisconnectIn()), db: Session = Depends(get_db)
+) -> GmailStatus:
+    """Disconnect one Gmail account (or all). Its fetched emails stay in the Inbox."""
+    gclient.disconnect(db, body.mailbox_id)
+    return gmail_status(db)
+
+
+@router.delete("/mailboxes/{mailbox_id}", response_model=GmailStatus)
+def remove_mailbox(mailbox_id: int, db: Session = Depends(get_db)) -> GmailStatus:
+    """Take a disconnected account off the list. Its fetched emails stay in the Inbox."""
+    try:
+        gclient.remove_mailbox(db, mailbox_id)
+    except gclient.GmailError as e:
+        raise _bad(e) from None
     return gmail_status(db)
 
 
@@ -162,7 +194,9 @@ def run_out(run: GmailRun) -> GmailRunOut:
 def estimate(body: GmailEstimateIn, db: Session = Depends(get_db)) -> GmailRunOut:
     """Step 1: count matching emails and estimate download size. Downloads nothing."""
     try:
-        return run_out(gfetch.estimate(db, body.template_ids, body.custom, body.date_from, body.date_to))
+        return run_out(
+            gfetch.estimate(db, body.template_ids, body.custom, body.date_from, body.date_to, body.mailbox_ids)
+        )
     except gclient.GmailError as e:
         raise _bad(e) from None
 

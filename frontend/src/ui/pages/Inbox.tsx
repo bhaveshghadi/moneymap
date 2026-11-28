@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { api, ApiError, qs, replaceQuery } from '../lib/api';
@@ -72,7 +72,9 @@ export function InboxPage() {
   const [limit, setLimit] = useState(PAGE);
   const [openId, setOpenId] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
-  const page = useApi<InboxPageT>(`/inbox${qs({ status, q: query, limit })}`);
+  const [box, setBox] = useState(''); // only the emails from this Gmail account
+  const page = useApi<InboxPageT>(`/inbox${qs({ status, q: query, limit, mailbox_id: box || undefined })}`);
+  const manyBoxes = (gmail.data?.mailboxes.length ?? 0) > 1;
 
   // /inbox?open=<id> (from a transaction's "Source email") — opened once per URL.
   const search = sp.toString();
@@ -137,6 +139,21 @@ export function InboxPage() {
 
       <div className="filters">
         <input className="inp grow" placeholder="Filter by sender, subject or text…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter emails" />
+        {manyBoxes && (
+          <select
+            className="inp"
+            style={{ width: 'auto', minWidth: 180 }}
+            value={box}
+            onChange={(e) => {
+              setBox(e.target.value);
+              setLimit(PAGE);
+            }}
+            aria-label="Gmail account"
+          >
+            <option value="">All Gmail accounts</option>
+            {gmail.data?.mailboxes.map((m) => <option key={m.id} value={m.id}>{m.email ?? `Account ${m.id}`}</option>)}
+          </select>
+        )}
       </div>
 
       <div className="card">
@@ -161,7 +178,7 @@ export function InboxPage() {
           ) : (
             <>
               {data.items.map((m) => (
-                <EmailRow key={m.id} m={m} onClick={() => setOpenId(m.id)} />
+                <EmailRow key={m.id} m={m} showBox={manyBoxes} onClick={() => setOpenId(m.id)} />
               ))}
               {data.items.length < data.total && (
                 <div className="load-more">
@@ -190,7 +207,7 @@ export function InboxPage() {
   );
 }
 
-function EmailRow({ m, onClick }: { m: InboxItem; onClick: () => void }) {
+function EmailRow({ m, showBox, onClick }: { m: InboxItem; showBox: boolean; onClick: () => void }) {
   return (
     <button type="button" className="txn click rowbtn" onClick={onClick}>
       <span className="ico" style={{ background: m.is_alert ? 'var(--indigo-50)' : 'var(--red-50)', color: m.is_alert ? 'var(--indigo-600)' : 'var(--red-500)' }}>
@@ -205,6 +222,11 @@ function EmailRow({ m, onClick }: { m: InboxItem; onClick: () => void }) {
       </div>
       <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
         <span className="muted" style={{ fontSize: 12 }}>{fmtWhen(m.sent_at)}</span>
+        {showBox && m.mailbox_email && (
+          <span className="muted" style={{ fontSize: 11.5, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.mailbox_email}>
+            {m.mailbox_email}
+          </span>
+        )}
         <span style={{ display: 'flex', gap: 4 }}>
           {m.is_alert && m.transaction_count === 0 && <span className="badge brand">Alert</span>}
           {m.attachments.length > 0 && <span className="badge neutral"><Icon name="paperclip" size={11} /> {m.attachments.length}</span>}
@@ -370,7 +392,7 @@ function EmailBody({ id }: { id: string }) {
         <div className="doc">
           <div className="doc-bar">
             <Icon name="mail" size={15} color="var(--red-500)" />
-            <span>Gmail</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Gmail{m.mailbox_email ? ` · ${m.mailbox_email}` : ''}</span>
             <span style={{ marginLeft: 'auto' }}>{m.sent_at ? new Date(m.sent_at).toLocaleString('en-IN') : ''}</span>
           </div>
           <div className="doc-meta">
@@ -462,10 +484,12 @@ function humanBytes(n: number): string {
 
 /** The emails found, grouped by what they matched: tick what to fetch. Ones already in the Inbox are greyed. */
 function FoundList({ run, picked, setPicked }: { run: GmailRun; picked: Set<string>; setPicked: (s: Set<string>) => void }) {
-  const groups = new Map<number, GmailFound[]>();
+  const many = (run.mailbox_ids ?? []).length > 1;
+  const groups = new Map<string, { q: number; box: string | null; list: GmailFound[] }>();
   for (const f of run.found) {
-    if (!groups.has(f.q)) groups.set(f.q, []);
-    groups.get(f.q)!.push(f);
+    const key = `${many ? f.mb : 0}:${f.q}`;
+    if (!groups.has(key)) groups.set(key, { q: f.q, box: many ? f.mailbox : null, list: [] });
+    groups.get(key)!.list.push(f);
   }
   const set = (ids: string[], on: boolean) => {
     const next = new Set(picked);
@@ -477,12 +501,19 @@ function FoundList({ run, picked, setPicked }: { run: GmailRun; picked: Set<stri
   };
   return (
     <div className="gm-found">
-      {[...groups.entries()].map(([q, list]) => {
+      {[...groups.entries()].map(([key, { q, box, list }], i, all) => {
         const fresh = list.filter((f) => !f.known);
         const on = fresh.filter((f) => picked.has(f.id)).length;
         const sorted = [...list].sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
+        const firstOfBox = box !== null && (i === 0 || all[i - 1][1].box !== box);
         return (
-          <details key={q} className="gm-group" open={run.found.length <= 40}>
+          <Fragment key={key}>
+          {firstOfBox && (
+            <div className="gm-box-head" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: 'var(--fg-2)', margin: i === 0 ? '0 0 6px' : '12px 0 6px' }}>
+              <Icon name="mail" size={13} color="var(--red-500)" /> {box}
+            </div>
+          )}
+          <details className="gm-group" open={run.found.length <= 40}>
             <summary>
               <input
                 type="checkbox"
@@ -511,12 +542,13 @@ function FoundList({ run, picked, setPicked }: { run: GmailRun; picked: Set<stri
                   )}
                   <span className="muted gm-meta">
                     {f.date ? fmtDate(f.date.slice(0, 10)) : '—'} · {(f.from ?? '').replace(/<.*>/, '').trim() || f.from} · {humanBytes(f.size)}
-                    {f.known && ' · Already in the Inbox'}
+                    {f.known && (f.dup ? ` · Same email already fetched from ${f.dup}` : ' · Already in the Inbox')}
                   </span>
                 </span>
               </label>
             ))}
           </details>
+          </Fragment>
         );
       })}
     </div>
@@ -548,6 +580,8 @@ function FetchBody({ status }: { status: GmailStatus }) {
   const [selected, setSelected] = useState<string[]>(() => readLocal<string[]>(SEL_KEY, []));
   const [custom, setCustom] = useState<string>(() => readLocal<string>(CUSTOM_KEY, ''));
   const [run, setRun] = useState<GmailRun | null>(null);
+  const live = status.mailboxes.filter((m) => m.connected);
+  const [boxes, setBoxes] = useState<number[]>(() => live.map((m) => m.id)); // the accounts to search
   const [picked, setPicked] = useState<Set<string>>(new Set()); // emails ticked to fetch
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -573,7 +607,7 @@ function FetchBody({ status }: { status: GmailStatus }) {
     try {
       const r = await api<GmailRun>('/gmail/estimate', {
         method: 'POST',
-        body: { template_ids: selected, custom: custom.split('\n'), date_from: from, date_to: to },
+        body: { template_ids: selected, custom: custom.split('\n'), date_from: from, date_to: to, mailbox_ids: live.length > 1 ? boxes : null },
       });
       setRun(r);
       setPicked(new Set(r.found.filter((f) => !f.known).map((f) => f.id))); // everything new, ticked
@@ -632,7 +666,7 @@ function FetchBody({ status }: { status: GmailStatus }) {
 
   return (
     <>
-      <DrawerHead title="Fetch from Gmail" sub={`Read-only · ${status.email ?? ''}`} lead={<span className="ico" style={{ background: 'var(--red-50)', color: 'var(--red-500)' }}><Icon name="mail-search" size={20} /></span>} />
+      <DrawerHead title="Fetch from Gmail" sub={`Read-only · ${live.length > 1 ? `${live.length} accounts` : status.email ?? ''}`} lead={<span className="ico" style={{ background: 'var(--red-50)', color: 'var(--red-500)' }}><Icon name="mail-search" size={20} /></span>} />
       <div className="drawer-body">
         {error && <div className="form-error" role="alert">{error}</div>}
 
@@ -649,6 +683,25 @@ function FetchBody({ status }: { status: GmailStatus }) {
               </div>
             </div>
             {status.last_fetch_to && <div className="hint" style={{ marginTop: -8, marginBottom: 14, fontSize: 12, color: 'var(--fg-3)' }}>Starts where your last fetch ended. Emails already in the Inbox are skipped.</div>}
+            {live.length > 1 && (
+              <div className="field">
+                <label>Gmail accounts</label>
+                <div className="chips">
+                  {live.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`chip ${boxes.includes(m.id) ? 'on' : ''}`}
+                      aria-pressed={boxes.includes(m.id)}
+                      onClick={() => setBoxes((b) => (b.includes(m.id) ? b.filter((x) => x !== m.id) : [...b, m.id]))}
+                    >
+                      {m.email}
+                    </button>
+                  ))}
+                </div>
+                <div className="hint">The same email in two accounts is fetched once.</div>
+              </div>
+            )}
 
             {[...groups.entries()].map(([kind, g]) => (
               <div key={kind} className="field" style={kind === 'transaction_alert' ? { borderTop: '1px solid var(--border)', paddingTop: 14 } : undefined}>
@@ -722,7 +775,7 @@ function FetchBody({ status }: { status: GmailStatus }) {
         {active && <Button variant="ghost" icon="square" onClick={cancel} disabled={run?.status === 'cancelling'}>Stop</Button>}
         <span className="spacer" />
         <Button variant="secondary" onClick={close}>{finished ? 'Close' : 'Cancel'}</Button>
-        {!run && <Button variant="primary" type="submit" form="gm-fetch" disabled={busy}>{busy ? 'Searching Gmail…' : 'Check what’s there'}</Button>}
+        {!run && <Button variant="primary" type="submit" form="gm-fetch" disabled={busy || (live.length > 1 && boxes.length === 0)}>{busy ? 'Searching Gmail…' : 'Check what’s there'}</Button>}
         {run?.status === 'estimated' && run.new_count > 0 && (
           <Button variant="primary" icon="download" onClick={start} disabled={busy || picked.size === 0 || (overLimit && !consent)}>
             Fetch {picked.size} email{picked.size === 1 ? '' : 's'}

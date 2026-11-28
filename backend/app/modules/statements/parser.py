@@ -81,6 +81,7 @@ class ParsedStatement:
     account_last4: str | None
     txns: list[ParsedTxn] = field(default_factory=list)
     unparsed: list[str] = field(default_factory=list)
+    guessed: int = 0  # rows whose direction (in / out) was a guess, not read from the statement
 
 
 def amount_to_paise(s: str) -> int:
@@ -261,7 +262,8 @@ def _money_tokens(after_date: str) -> list[str]:
 #   <S No> <DD.MM.YYYY> [cheque no] <amount> <balance>
 #   <remarks lines: UPI/…/…>
 # with separate Withdrawal / Deposit columns that the text doesn't keep apart.
-OP_HISTORY_RE = re.compile(r"statement of transactions in sav\w* account", re.I)
+# heading: "…in Savings Account…" or (newer) "…in Account no. 1234… in INR"
+OP_HISTORY_RE = re.compile(r"statement of transactions in (?:sav\w* )?account", re.I)
 OP_ROW_RE = re.compile(r"^(\d{1,4})\s+(\d{2})\.(\d{2})\.(\d{4})\s+(.*\d)$")
 OP_FURNITURE_RE = re.compile(
     r"^(\d{1,3}$|www\.icici|please call from|never share your otp|transaction\s+withdrawal|s no\.|date\s+amount)", re.I
@@ -323,9 +325,271 @@ def _parse_op_history(text: str, doc_type: str) -> ParsedStatement:
     return ParsedStatement(doc_type=doc_type, account_last4=extract_account_last4(text), txns=txns, unparsed=unparsed)
 
 
+# "Transaction Date  Value Date  Description  Amount  Dr / Cr  [Balance]" (Bandhan Bank and similar):
+#   12Nov 2026   12Nov 2026   WTHDRL LOAN EMI 7222… -   INR12,719.00   Dr
+#   November12, 2026 November12, 2026 GST 1820-GST   INR36.00   Dr   INR3,753.00
+#   BHAVESH … Drawdown            <- the description goes on over the next lines
+# Dates: day or month first, short or full month name, or dd/mm/yyyy; the balance column is optional.
+DRCR_HEADER_RE = re.compile(
+    r"(?:transaction|txn|tran)?\s*date\s+value\s*date\s+(?:description|narration|particulars|details)\s+"
+    r"amount\s*(?:\(\s*(?:inr|rs\.?|₹)\s*\))?\s+dr\s*/\s*cr",
+    re.I,
+)
+DRCR_ANY_DATE = (
+    r"(?:\d{1,2}\s*[A-Za-z]{3,9}\.?,?\s*\d{4}|[A-Za-z]{3,9}\.?\s*\d{1,2},?\s*\d{4}|\d{1,2}[/-]\d{1,2}[/-]\d{4})"
+)
+DRCR_MONEY = r"(?:INR|Rs\.?|₹)?\s*(-?\d[\d,]*\.\d{1,2})"
+DRCR_ROW_RE = re.compile(
+    rf"^({DRCR_ANY_DATE})\s+{DRCR_ANY_DATE}\s+(.*?)\s*{DRCR_MONEY}\s+(Dr|Cr)\.?"
+    rf"(?:\s+{DRCR_MONEY}(?:\s*(?:Dr|Cr)\.?)?)?$",
+    re.I,
+)
+DRCR_END_RE = re.compile(
+    r"^(statement generated on|statement summary|opening balance\s+total|please find the details"
+    r"|this is a (?:system|computer) generated)",
+    re.I,
+)
+MONTHS = {
+    m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)
+}
+
+
+def _any_date(s: str) -> str | None:
+    """ "12Nov 2026", "12 November, 2026", "November12, 2026", "Nov 12 2026" or "12/11/2026" -> ISO."""
+    s = s.strip()
+    if m := re.fullmatch(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", s):
+        return iso_date(m.group(1), m.group(2), m.group(3))
+    if m := re.fullmatch(r"(\d{1,2})\s*([A-Za-z]{3,9})\.?,?\s*(\d{4})", s):
+        day, mon, year = m.group(1), m.group(2), m.group(3)
+    elif m := re.fullmatch(r"([A-Za-z]{3,9})\.?\s*(\d{1,2}),?\s*(\d{4})", s):
+        mon, day, year = m.group(1), m.group(2), m.group(3)
+    else:
+        return None
+    n = MONTHS.get(mon.lower()[:3])
+    return iso_date(day, str(n), year) if n else None
+
+
+def _parse_dr_cr(text: str, doc_type: str) -> ParsedStatement:
+    """Rows of date, value date, description, amount, Dr / Cr and (maybe) the balance."""
+    txns: list[ParsedTxn] = []
+    unparsed: list[str] = []
+    current: list[str] | None = None  # [row line, continuation lines…]
+
+    def close() -> None:
+        if not current:
+            return
+        m = DRCR_ROW_RE.match(current[0])
+        d = _any_date(m.group(1)) if m else None
+        raw = " ".join(current)
+        if not m or not d:
+            unparsed.append(raw)
+            return
+        desc = " ".join([m.group(2).rstrip(" -"), *current[1:]]).strip()
+        magnitude = amount_to_paise(m.group(3))
+        if magnitude == 0:
+            unparsed.append(raw)
+            return
+        signed = magnitude if m.group(4).lower() == "cr" else -magnitude
+        balance = amount_to_paise(m.group(5)) if m.group(5) else None
+        txns.append(
+            ParsedTxn(
+                date=d,
+                amount=signed,
+                description=desc,
+                raw=raw,
+                balance=balance,
+                counterparty=extract_counterparty(desc),
+            )
+        )
+
+    for ln in (re.sub(r"[ \t]+", " ", x).strip() for x in text.replace("\r", "").split("\n")):
+        if not ln:
+            continue
+        if DRCR_END_RE.search(ln) or DRCR_HEADER_RE.search(ln):  # the end, or the header again on the next page
+            close()
+            current = None
+            continue
+        if DRCR_ROW_RE.match(ln):
+            close()
+            current = [ln]
+        elif current is not None and len(current) < 6:
+            current.append(ln)
+    close()
+    return ParsedStatement(doc_type=doc_type, account_last4=extract_account_last4(text), txns=txns, unparsed=unparsed)
+
+
+# "Date  Effective Date  Cheque/Reference No  Transaction Detail  Debit  Credit  Balance" (Bandhan Bank's monthly
+# e-statement; the PDF text may lose the spaces inside the header words):
+#   01/08/2026 01/08/2026   WTHDRL LOAN EMI 7222… -BHAVESH YASH   12719.00   0.00   3123.00
+#   WANT GHA Drawdown From CASA.        <- the detail goes on over the next lines
+DCB_HEADER_RE = re.compile(
+    r"date\s*effective\s*date\s*cheque\s*/?\s*reference\s*no\.?\s*transaction\s*details?\s*debit\s*credit\s*balance",
+    re.I,
+)
+DCB_ROW_RE = re.compile(
+    r"^(\d{2})/(\d{2})/(\d{4})\s+\d{2}/\d{2}/\d{4}\s+(.*?)\s*"
+    r"(\d[\d,]*\.\d{1,2})\s+(\d[\d,]*\.\d{1,2})\s+(-?\d[\d,]*\.\d{1,2})$"
+)
+DCB_END_RE = re.compile(
+    r"^(opening|statement\s*period|no\s*of\s*debit|each\s*depositor|-?\s*this\s*is\s*computer|you\s*can\s*reach)", re.I
+)
+
+
+def _parse_debit_credit_balance(text: str, doc_type: str) -> ParsedStatement:
+    """Rows of date, effective date, reference + detail, debit, credit and balance."""
+    txns: list[ParsedTxn] = []
+    unparsed: list[str] = []
+    current: list[str] | None = None
+
+    def close() -> None:
+        if not current:
+            return
+        m = DCB_ROW_RE.match(current[0])
+        d = iso_date(m.group(1), m.group(2), m.group(3)) if m else None
+        raw = " ".join(current)
+        if not m or not d:
+            unparsed.append(raw)
+            return
+        debit, credit = amount_to_paise(m.group(5)), amount_to_paise(m.group(6))
+        if (debit == 0) == (credit == 0):  # neither, or both: can't tell
+            unparsed.append(raw)
+            return
+        desc = " ".join([m.group(4).strip(), *current[1:]])
+        txns.append(
+            ParsedTxn(
+                date=d,
+                amount=credit if credit else -debit,
+                description=desc.strip(),
+                raw=raw,
+                balance=amount_to_paise(m.group(7)),
+                counterparty=extract_counterparty(desc),
+            )
+        )
+
+    for ln in (re.sub(r"[ \t]+", " ", x).strip() for x in text.replace("\r", "").split("\n")):
+        if not ln:
+            continue
+        if DCB_HEADER_RE.search(ln) or DCB_END_RE.search(ln):
+            close()
+            current = None
+            continue
+        if DCB_ROW_RE.match(ln):
+            close()
+            current = [ln]
+        elif current is not None and len(current) < 4:
+            current.append(ln)
+    close()
+    return ParsedStatement(doc_type=doc_type, account_last4=extract_account_last4(text), txns=txns, unparsed=unparsed)
+
+
+# "Date  Narration  [Instrument Number]  Debit  Credit  Balance" with dates like "18 Aug 2026"
+# (Saraswat Co-operative Bank and similar). Used only when the other readers find no rows.
+#   18 Aug 2026   CARD AMC AUG26 XX7092         -   236.00               1,940.14
+#   19 Aug 2026   UPI/623106331742/BHAVES       -              10,000.00 11,940.14
+#                 H YA/ICIC/XX1288/UPI          <- the narration goes on below
+# A cell left empty isn't in the text, so the direction comes from the column the amount sits in
+# (when the text keeps the columns) or from the change in the balance.
+WM_DATE = r"(?:\d{1,2}[ -]?[A-Za-z]{3,9}\.?,?[ -]?\d{4}|[A-Za-z]{3,9}\.?\s*\d{1,2},?\s*\d{4})"
+WM_ROW_RE = re.compile(rf"^\s*({WM_DATE})\b\s*(.*)$")
+WM_HEADER_RE = re.compile(
+    r"^[ \t]*(?:txn\s*|transaction\s*|value\s*|posting\s*)?date\b.*"
+    r"\b(narration|particulars|description|details|remarks)\b",
+    re.I | re.M,
+)
+WM_MONEY_RE = re.compile(r"(?<![\w.,/:-])\d[\d,]*\.\d{2}(?![\w.])")
+WM_END_RE = re.compile(
+    r"^\s*(this is (?:a )?(?:system|computer)[- ]generated|generated on|page \d+\s*of|statement summary"
+    r"|opening balance|closing balance|total\b|grand total|\*+\s*end of)",
+    re.I,
+)
+WM_COLS_RE = re.compile(r"\b(debit|withdrawals?)\b.*?\b(credit|deposits?)\b.*?\bbalance\b", re.I)
+
+
+def _parse_word_month(text: str, doc_type: str) -> ParsedStatement:
+    """Rows led by a date with the month in words; narration, then Debit / Credit / Balance."""
+    txns: list[ParsedTxn] = []
+    unparsed: list[str] = []
+    guessed = 0
+    lines = text.replace("\r", "").split("\n")
+    debit_col = credit_col = None  # character positions of the Debit / Credit headings, when kept
+    in_table = False
+    blocks: list[list[str]] = []
+    for ln in lines:
+        if not ln.strip():
+            continue
+        if WM_HEADER_RE.search(ln):
+            in_table = True
+            if (c := WM_COLS_RE.search(ln)) and re.search(r"\S {6,}\S", ln):
+                debit_col, credit_col = c.start(1), c.start(2)
+            continue
+        if not in_table:
+            continue
+        if WM_END_RE.search(ln):
+            in_table = False  # resumes at the header on the next page
+            continue
+        m = WM_ROW_RE.match(ln)
+        if m and _any_date(re.sub(r"[ -]+", " ", m.group(1))):
+            blocks.append([ln])
+        elif blocks and len(blocks[-1]) < 6:
+            blocks[-1].append(ln)
+
+    prev_balance: int | None = None
+    for block in blocks:
+        first = block[0]
+        m = WM_ROW_RE.match(first)
+        d = _any_date(re.sub(r"[ -]+", " ", m.group(1)))
+        rest = [m.group(2), *block[1:]]
+        raw = re.sub(r"\s+", " ", " ".join(x.strip() for x in block))
+        # amounts: on the date line, or (when the text wraps the narration first) on a later line
+        where = next((i for i, x in enumerate(rest) if len(WM_MONEY_RE.findall(x)) >= 2), None)
+        if d is None or where is None:
+            unparsed.append(raw)
+            continue
+        found = list(WM_MONEY_RE.finditer(rest[where]))
+        amt_m, bal_m = found[-2], found[-1]
+        magnitude = amount_to_paise(amt_m.group(0))
+        balance = amount_to_paise(bal_m.group(0))
+        if magnitude == 0:
+            unparsed.append(raw)
+            continue
+        direction = None
+        if debit_col is not None and where == 0:
+            pos = len(first) - len(m.group(2)) + amt_m.start()
+            direction = 1 if abs(pos - credit_col) < abs(pos - debit_col) else -1
+        elif prev_balance is not None:
+            direction = 1 if balance >= prev_balance else -1
+        if direction is None:
+            guessed += 1
+            direction = 1 if CREDIT_RE.search(raw) and not DEBIT_RE.search(raw) else -1
+        prev_balance = balance
+        line_w = rest[where][: amt_m.start()] + rest[where][bal_m.end() :]
+        parts = [*rest[:where], line_w, *rest[where + 1 :]]
+        desc = re.sub(r"\s+", " ", " ".join(parts))
+        desc = re.sub(r"(^|\s)-(?=\s|$)", " ", desc)  # empty cells printed as "-"
+        desc = re.sub(r"(^|\s)(?:dr|cr)(?=\s|$)", " ", desc, flags=re.I)
+        desc = re.sub(r"\s+", " ", desc).strip()
+        txns.append(
+            ParsedTxn(
+                date=d,
+                amount=direction * magnitude,
+                description=desc,
+                raw=raw,
+                balance=balance,
+                counterparty=extract_counterparty(desc),
+            )
+        )
+    return ParsedStatement(
+        doc_type=doc_type, account_last4=extract_account_last4(text), txns=txns, unparsed=unparsed, guessed=guessed
+    )
+
+
 def parse_statement(text: str, doc_type: str = "bank_statement", opening_balance: int | None = None) -> ParsedStatement:
     if OP_HISTORY_RE.search(text[:600]) and sum(1 for ln in text.splitlines() if OP_ROW_RE.match(ln.strip())) >= 1:
         return _parse_op_history(text, doc_type)
+    if DRCR_HEADER_RE.search(text) and sum(1 for ln in text.splitlines() if DRCR_ROW_RE.match(ln.strip())) >= 1:
+        return _parse_dr_cr(text, doc_type)
+    if DCB_HEADER_RE.search(text) and sum(1 for ln in text.splitlines() if DCB_ROW_RE.match(ln.strip())) >= 1:
+        return _parse_debit_credit_balance(text, doc_type)
     dated: list[tuple[str, str, list[str], str | None]] = []
     unparsed: list[str] = []
     card = is_card_statement(text) or doc_type == "card_statement"
@@ -396,6 +660,10 @@ def parse_statement(text: str, doc_type: str = "bank_statement", opening_balance
             )
         )
 
+    if not txns and not card and WM_HEADER_RE.search(text):
+        alt = _parse_word_month(text, doc_type)
+        if alt.txns:
+            return alt
     return ParsedStatement(
         doc_type="card_statement" if is_card_statement(text) else doc_type,
         account_last4=extract_account_last4(text),
@@ -404,34 +672,30 @@ def parse_statement(text: str, doc_type: str = "bank_statement", opening_balance
     )
 
 
+def _balance_checks(st: ParsedStatement) -> tuple[int, int]:
+    """(rows whose running balance follows from the one before, rows where it doesn't). Statements
+    list rows oldest first (the step is this row's amount) or newest first (the step is the row
+    before's amount) — whichever fits better."""
+    rows = [t for t in st.txns if t.balance is not None]
+    pairs = list(zip(rows, rows[1:], strict=False))
+    oldest_first = sum(1 for a, b in pairs if abs(b.balance - a.balance) == abs(b.amount))
+    newest_first = sum(1 for a, b in pairs if abs(b.balance - a.balance) == abs(a.amount))
+    ok = max(oldest_first, newest_first)
+    return ok, len(pairs) - ok
+
+
 def balance_consistency(st: ParsedStatement) -> int:
     """How many rows' running balances add up (previous balance ± amount).
     Used to pick the best of several PDF text extractions."""
-    ok = 0
-    prev = None
-    for t in st.txns:
-        if t.balance is None:
-            continue
-        if prev is not None and abs(t.balance - prev) == abs(t.amount):
-            ok += 1
-        prev = t.balance
-    return ok
+    return _balance_checks(st)[0]
 
 
 def balance_mismatches(st: ParsedStatement) -> int:
     """Rows whose running balance does NOT follow from the previous one."""
-    bad = 0
-    prev = None
-    for t in st.txns:
-        if t.balance is None:
-            continue
-        if prev is not None and abs(t.balance - prev) != abs(t.amount):
-            bad += 1
-        prev = t.balance
-    return bad
+    return _balance_checks(st)[1]
 
 
-def score(st: ParsedStatement) -> tuple[int, int, int]:
+def score(st: ParsedStatement) -> tuple[int, int, int, int]:
     """Best extraction: most balances that add up, then fewest that don't
-    (a jumbled text can add stray rows), then most rows."""
-    return balance_consistency(st), -balance_mismatches(st), len(st.txns)
+    (a jumbled text can add stray rows), then most rows, then fewest in / out guesses."""
+    return balance_consistency(st), -balance_mismatches(st), len(st.txns), -st.guessed

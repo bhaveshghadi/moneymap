@@ -430,6 +430,10 @@ def refresh(db: Session, imp: StatementImport) -> None:
                 claimed.add(t.id)
         if not row.user_set:
             row.include = row.duplicate_of is None
+        elif row.duplicate_of is not None and not row.keep_duplicate:
+            # found after you edited the row (e.g. once its account was chosen): still left out,
+            # unless you tick it in yourself after seeing it's already recorded
+            row.include = False
 
 
 def row_status(row: StatementRow) -> str:

@@ -214,13 +214,13 @@ export function StatementReviewPage({ id }: { id: number }) {
           </p>
         </div>
         <div className="actions">
-          {st.status === 'draft' && (
-            <Button variant="ghost" icon="refresh-cw" onClick={reread} disabled={busy} title="Read the saved statement text again — no password needed">
+          {(st.status === 'draft' || st.status === 'imported') && (
+            <Button variant="ghost" icon="refresh-cw" onClick={reread} disabled={busy} title="Read the saved statement text again — no password needed. Rows already imported are kept.">
               Re-read
             </Button>
           )}
-          {st.status === 'draft' && st.rows.length > 0 && (
-            <Button variant="ghost" icon="file-search" onClick={() => setShowReread((v) => !v)} title="Extract the PDF's text again (needs the PDF password)">
+          {(st.status === 'imported' || (st.status === 'draft' && st.rows.length > 0)) && (
+            <Button variant="ghost" icon="file-search" onClick={() => setShowReread((v) => !v)} title="Extract the PDF's text again (needs the PDF password unless remembered). Rows already imported are kept.">
               Read PDF again
             </Button>
           )}

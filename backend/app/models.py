@@ -16,6 +16,7 @@ from .modules.gmail.models import (  # noqa: F401
     GmailRun,
 )
 from .modules.investments.models import (  # noqa: F401
+    BondPayout,
     CasFund,
     CasImport,
     CasRow,

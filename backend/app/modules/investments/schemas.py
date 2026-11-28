@@ -18,6 +18,7 @@ Kind = Literal[
     "stocks",
     "crypto",
     "property",
+    "bond",
     "other",
 ]
 Compounding = Literal["monthly", "quarterly", "half_yearly", "yearly", "payout", "simple"]
@@ -47,6 +48,10 @@ class _Terms(BaseModel):
     payout_amount: int | None = Field(default=None, ge=0)
     pay_from_id: int | None = None
     notes: str | None = None
+    platform: str | None = Field(default=None, max_length=60)
+    rating: str | None = Field(default=None, max_length=40)
+    repayment: Literal["bullet", "amortising"] | None = None
+    face_value: int | None = Field(default=None, gt=0)  # paise, one unit
 
 
 class FundIn(BaseModel):
@@ -106,7 +111,7 @@ class DueOut(BaseModel):
     name: str
     kind: str
     date: Date
-    what: str  # matures | premium | due_back | instalment | balance (property: a planned payment)
+    what: str  # matures | premium | due_back | instalment | payout (bond) | balance (property: a planned payment)
     amount: int
     overdue: bool = False
 
@@ -225,8 +230,56 @@ class InvestmentOut(BaseModel):
     stale: bool  # a value entered by hand, over 90 days old
     no_price: bool  # no price / rate yet: value shown = invested
     next_due: DueOut | None
+    platform: str | None = None
+    rating: str | None = None
+    repayment: str | None = None
+    face_value: int | None = None
     fund: FundOut | None = None
     property: PropertyOut | None = None  # mutual funds
+    bond: "BondOut | None" = None
+
+
+class BondRowOut(BaseModel):
+    n: int
+    date: Date
+    interest: int
+    principal: int
+    outstanding: int
+    payout_id: int | None  # recorded as received
+    status: Literal["received", "due", "missed"]  # missed: the date has passed, nothing recorded
+
+
+class BondPayoutOut(BaseModel):
+    id: int
+    date: Date
+    n: int | None
+    interest: int
+    principal: int
+    tds: int
+    received: int  # into the bank: interest - TDS + principal
+    interest_txn_id: int | None
+    principal_txn_id: int | None
+
+
+class BondOut(BaseModel):
+    face: int | None  # face value of the holding
+    outstanding: int  # principal still to come back
+    principal_back: int
+    interest_received: int  # before TDS
+    tds: int
+    schedule: list[BondRowOut]
+    payouts: list[BondPayoutOut]
+    unsplit: list[TransactionOut]  # money back from the bond not yet split into interest + principal
+
+
+class PayoutIn(BaseModel):
+    date: Date
+    bank_id: int
+    interest: int = Field(ge=0, le=10**13)  # before TDS
+    principal: int = Field(ge=0, le=10**13)
+    tds: int = Field(default=0, ge=0, le=10**13)
+    n: int | None = None
+    transaction_id: int | None = None  # an existing bank credit to split instead of adding new ones
 
 
 class InvestmentDetail(InvestmentOut):
@@ -295,3 +348,7 @@ class CloseIn(BaseModel):
     date: Date
     amount: int | None = Field(default=None, gt=0)  # money received on closing, into bank_id
     bank_id: int | None = None
+
+
+InvestmentOut.model_rebuild()
+InvestmentDetail.model_rebuild()

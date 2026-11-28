@@ -10,6 +10,7 @@ from .db import as_user
 from .modules.accounts.router import router as accounts_router
 from .modules.auth.router import router as auth_router
 from .modules.auth.security import SessionUserMiddleware
+from .modules.backup.router import router as backup_router
 from .modules.bills.router import router as bills_router
 from .modules.budgets.router import router as budgets_router
 from .modules.cards.emi import router as emi_router
@@ -85,6 +86,7 @@ for r in (
     statements_router,
     reset_router,
     users_router,
+    backup_router,
 ):
     app.include_router(r, prefix="/api")
 

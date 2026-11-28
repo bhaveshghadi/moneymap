@@ -8,6 +8,7 @@ import { Icon } from '../primitives/Icon';
 import { ResetCard } from '../shared/ResetCard';
 import { GmailCard } from '../shared/GmailCard';
 import { UsersCard } from '../shared/UsersCard';
+import { BackupCard } from '../shared/BackupCard';
 import { useTheme, type ThemeChoice } from '../lib/theme';
 import { PageHelp } from '../shared/PageHelp';
 
@@ -112,6 +113,10 @@ export function SettingsPage() {
             )}
           </div>
         </div>
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <BackupCard />
       </div>
 
       <div style={{ marginTop: 18 }}>

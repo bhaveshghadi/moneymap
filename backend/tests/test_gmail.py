@@ -91,7 +91,7 @@ def fake(monkeypatch):
                  body_text="Dear Customer, Rs.450.00 has been debited from account **1234 to VPA swiggy@icici on 12-11-26."),
     ]
     g = FakeGmail(msgs, {"m1-a0": PDF, "m3-a0": PDF})
-    monkeypatch.setattr(gclient, "api_for", lambda db: g)
+    monkeypatch.setattr(gclient, "api_for", lambda db, mailbox=None: g)
     monkeypatch.setattr(gfetch, "RUN_INLINE", True)
     return g
 
@@ -231,6 +231,7 @@ def test_connect_callback_and_paste_flow(client, connected, fake):
 def test_secrets_are_encrypted_at_rest(client, connected):
     db = sqlite3.connect(get_settings().data_dir / "moneymap.db")
     raw = " ".join(str(v) for v in db.execute("SELECT * FROM gmail_account").fetchone())
+    raw += " ".join(str(v) for v in db.execute("SELECT * FROM gmail_mailbox").fetchone())
     db.close()
     assert "123-abc" in raw  # the client id isn't secret
     assert "s3cret" not in raw and "at-SECRET" not in raw and "rt-SECRET" not in raw

@@ -92,6 +92,7 @@ def counts(db: Session = Depends(get_db)) -> dict[str, int]:
 def list_inbox(
     status_: str = Query(default="new", alias="status", pattern="^(new|handled|ignored|all)$"),
     q: str | None = Query(default=None, max_length=200),
+    mailbox_id: int | None = Query(default=None),  # only the emails from this Gmail account
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -100,6 +101,8 @@ def list_inbox(
     query = select(GmailMessage)
     if status_ != "all":
         query = query.where(GmailMessage.status == status_)
+    if mailbox_id is not None:
+        query = query.where(GmailMessage.mailbox_id == mailbox_id)
     if q and q.strip():
         like = f"%{q.strip()}%"
         query = query.where(

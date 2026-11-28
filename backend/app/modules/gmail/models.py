@@ -9,17 +9,13 @@ from ...db import Base
 
 
 class GmailAccount(Base):
-    """The user's own Google OAuth client and its token (at most one row, id=1).
-    The client secret and the token are stored encrypted."""
+    """The user's own Google OAuth client (at most one row, id=1); the client secret is stored
+    encrypted. The Gmail accounts it's connected to are GmailMailbox rows."""
 
     __tablename__ = "gmail_account"
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[str] = mapped_column(String(255))
     client_secret_enc: Mapped[str] = mapped_column(Text)
-    token_enc: Mapped[str | None] = mapped_column(Text)  # encrypted JSON: access/refresh token, expiry
-    email: Mapped[str | None] = mapped_column(String(320))
-    connected_at: Mapped[datetime | None] = mapped_column(DateTime)
-    last_fetch_to: Mapped[date | None] = mapped_column(Date)  # default start for the next fetch
 
     @property
     def client_secret(self) -> str:
@@ -28,6 +24,19 @@ class GmailAccount(Base):
     @client_secret.setter
     def client_secret(self, value: str) -> None:
         self.client_secret_enc = encrypt(value)
+
+
+class GmailMailbox(Base):
+    """One connected Gmail account (address + its token, stored encrypted). Disconnecting keeps
+    the row (no token) so its fetched emails still show where they came from."""
+
+    __tablename__ = "gmail_mailbox"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str | None] = mapped_column(String(320))
+    token_enc: Mapped[str | None] = mapped_column(Text)  # encrypted JSON: access/refresh token, expiry
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_fetch_to: Mapped[date | None] = mapped_column(Date)  # default start for the next fetch
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     @property
     def token(self) -> dict | None:
@@ -54,8 +63,11 @@ class GmailRun(Base):
     date_from: Mapped[date] = mapped_column(Date)
     date_to: Mapped[date] = mapped_column(Date)
     queries: Mapped[list] = mapped_column(JSON, default=list)  # [{label, provider_id, doc_type, query}]
-    pending_ids: Mapped[list] = mapped_column(JSON, default=list)  # [[message_id, query_index], ...] not yet stored
-    # every email found: {id, q (query index), from, subject, date, size, known (already in the Inbox)}
+    mailbox_ids: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")  # the accounts searched
+    # [[message_id, query_index, mailbox_id], ...] not yet stored
+    pending_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # every email found: {id, q (query index), mb (mailbox id), from, subject, date, size,
+    #  known (already in the Inbox), dup (the same email, fetched from another account)}
     found: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     matched_count: Mapped[int] = mapped_column(Integer, default=0)
     new_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -74,6 +86,11 @@ class GmailMessage(Base):
     __tablename__ = "gmail_message"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # Gmail message id
     thread_id: Mapped[str | None] = mapped_column(String(64))
+    mailbox_id: Mapped[int | None] = mapped_column(
+        ForeignKey("gmail_mailbox.id", ondelete="SET NULL", name="fk_gmail_message_mailbox_id_gmail_mailbox"),
+        index=True,
+    )  # the Gmail account it was fetched from
+    rfc_id: Mapped[str | None] = mapped_column(String(255), index=True)  # Message-ID header: same email, any account
     run_id: Mapped[int | None] = mapped_column(
         ForeignKey("gmail_run.id", ondelete="SET NULL", name="fk_gmail_message_run_id_gmail_run")
     )
@@ -94,6 +111,11 @@ class GmailMessage(Base):
     attachments: Mapped[list["GmailAttachment"]] = relationship(
         back_populates="message", cascade="all, delete-orphan", lazy="selectin", order_by="GmailAttachment.id"
     )
+    mailbox: Mapped[GmailMailbox | None] = relationship(lazy="selectin")
+
+    @property
+    def mailbox_email(self) -> str | None:
+        return self.mailbox.email if self.mailbox is not None else None
 
 
 class GmailAttachment(Base):

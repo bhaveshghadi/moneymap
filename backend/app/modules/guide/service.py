@@ -12,7 +12,7 @@ from ..bills.models import Bill
 from ..budgets.models import Budget
 from ..categories.models import Category
 from ..emergency.models import EmergencyFund
-from ..gmail.models import GmailAccount
+from ..gmail.models import GmailMailbox
 from ..investments.models import Investment
 from ..loans.models import Loan
 from ..rules.models import Rule
@@ -172,7 +172,7 @@ def _progress(db: Session) -> dict[str, tuple[bool, str]]:
     others = sum(int(v) for k, v in kinds.items() if k != "mf")
     prop = int(kinds.get("property", 0))
     imported = _count(db, select(func.count(StatementImport.id)).where(StatementImport.status == "imported"))
-    gmail = db.scalar(select(GmailAccount.id).where(GmailAccount.token_enc.is_not(None)).limit(1)) is not None
+    gmail = db.scalar(select(GmailMailbox.id).where(GmailMailbox.token_enc.is_not(None)).limit(1)) is not None
     txns = _count(db, select(func.count(Transaction.id)))
     rules = _count(db, select(func.count(Rule.id)))
     emergency = db.scalar(select(EmergencyFund.id).limit(1)) is not None

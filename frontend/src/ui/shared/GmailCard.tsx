@@ -21,6 +21,7 @@ export function GmailCard() {
   const [busy, setBusy] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmBox, setConfirmBox] = useState<number | null>(null);
 
   // Result of Google's redirect back to /settings?gmail=… — shown once per new URL, then the
   // query is dropped from the address bar.
@@ -31,7 +32,7 @@ export function GmailCard() {
   if (search !== seenSearch) {
     setSeenSearch(search);
     const g = sp.get('gmail');
-    if (g === 'connected') setNotice('Gmail connected. You can fetch emails from the Inbox page.');
+    if (g === 'connected') setNotice('Gmail account connected. You can fetch emails from the Inbox page.');
     else if (g) setError(`Gmail connection failed: ${sp.get('reason') ?? 'unknown error'}`);
   }
   useEffect(() => {
@@ -128,16 +129,50 @@ export function GmailCard() {
               {replacing && <Button variant="ghost" onClick={() => setReplacing(false)}>Cancel</Button>}
             </div>
           </form>
-        ) : !st.connected ? (
+        ) : (
           <>
-            <div className="kv">
-              <span className="k">OAuth client</span>
-              <span className="v t-mono">{st.client_id_hint}{st.client_from_env && <span className="badge neutral" style={{ marginLeft: 6, fontFamily: 'var(--font-text)' }}>From the server</span>}</span>
-            </div>
-            <p style={{ fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.55 }}>
-              Next, sign in with Google and allow <b>read-only</b> Gmail access. Google may warn that the app isn&apos;t verified —
-              that&apos;s expected for your own client; choose <i>Continue</i>.
-            </p>
+            {st.mailboxes.length > 0 && (
+              <div className="gm-boxes" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                {st.mailboxes.map((m) => (
+                  <div key={m.id} className="card-pad" style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Icon name="mail" size={16} color={m.connected ? 'var(--red-500)' : 'var(--fg-3)'} />
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                      <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+                        {m.email ?? 'Gmail account'}{' '}
+                        {m.connected ? <span className="badge mint">Connected</span> : <span className="badge neutral">Not connected</span>}
+                      </div>
+                      <div className="muted" style={{ fontSize: 12.5 }}>
+                        {m.emails} email{m.emails === 1 ? '' : 's'} in the Inbox · {m.last_fetch_to ? `fetched up to ${m.last_fetch_to}` : 'nothing fetched yet'}
+                      </div>
+                    </div>
+                    {m.connected ? (
+                      <Button variant="ghost" size="sm" icon="unplug" disabled={busy} onClick={() => run(() => api('/gmail/disconnect', { method: 'POST', body: { mailbox_id: m.id } }))}>
+                        Disconnect
+                      </Button>
+                    ) : (
+                      <>
+                        <Button variant="secondary" size="sm" disabled={busy} onClick={connect}>Reconnect</Button>
+                        <Button
+                          variant={confirmBox === m.id ? 'primary' : 'ghost'}
+                          size="sm"
+                          className={confirmBox === m.id ? 'btn-danger' : ''}
+                          disabled={busy}
+                          onClick={() => (confirmBox === m.id ? run(() => api(`/gmail/mailboxes/${m.id}`, { method: 'DELETE' })) : setConfirmBox(m.id))}
+                        >
+                          {confirmBox === m.id ? 'Confirm remove' : 'Remove'}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!st.connected && (
+              <p style={{ fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.55 }}>
+                {st.mailboxes.length ? 'Connect again, or ' : 'Next, '}sign in with Google and allow <b>read-only</b> Gmail access. Google may warn that the
+                app isn&apos;t verified — that&apos;s expected for your own client; choose <i>Continue</i>.
+              </p>
+            )}
             {pending ? (
               <form onSubmit={submitPasted}>
                 <div className="note info" style={{ marginBottom: 12 }}>
@@ -160,24 +195,33 @@ export function GmailCard() {
             ) : (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button type="button" className="gbtn" onClick={connect} disabled={busy}>
-                  <Icon name="mail" size={18} color="var(--red-500)" /> Connect Gmail (read-only)
+                  <Icon name="mail" size={18} color="var(--red-500)" /> {st.connected ? 'Connect another Gmail' : 'Connect Gmail (read-only)'}
                 </button>
-                {!st.client_from_env && <Button variant="ghost" size="sm" onClick={() => setReplacing(true)}>Use a different client</Button>}
+                {!st.connected && !st.client_from_env && <Button variant="ghost" size="sm" onClick={() => setReplacing(true)}>Use a different client</Button>}
               </div>
             )}
-          </>
-        ) : (
-          <>
-            <div className="kv"><span className="k">Account</span><span className="v">{st.email ?? 'Connected'}</span></div>
-            <div className="kv"><span className="k">Access</span><span className="v">Read-only (gmail.readonly)</span></div>
-            {st.client_from_env && <div className="kv"><span className="k">OAuth client</span><span className="v">From the server (MONEYMAP_GOOGLE_CLIENT_JSON)</span></div>}
-            <div className="kv"><span className="k">Connected</span><span className="v">{st.connected_at ? new Date(st.connected_at).toLocaleString('en-IN') : '—'}</span></div>
-            <div className="kv"><span className="k">Fetched up to</span><span className="v">{st.last_fetch_to ?? 'Nothing fetched yet'}</span></div>
+            {st.connected && (
+              <div className="hint" style={{ marginTop: 8 }}>
+                Sign in with the other address when Google asks. If your Google app is in <i>Testing</i>, add that address under{' '}
+                <i>OAuth consent screen → Test users</i> first.
+              </div>
+            )}
+            <div style={{ marginTop: 16 }}>
+              <div className="kv"><span className="k">Access</span><span className="v">Read-only (gmail.readonly)</span></div>
+              <div className="kv">
+                <span className="k">OAuth client</span>
+                <span className="v">
+                  {st.client_from_env ? 'From the server (MONEYMAP_GOOGLE_CLIENT_JSON)' : <span className="t-mono">{st.client_id_hint}</span>}
+                </span>
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-              <Button variant="secondary" size="sm" icon="unplug" onClick={() => run(() => api('/gmail/disconnect', { method: 'POST' }))} disabled={busy}>
-                Disconnect
-              </Button>
-              {!st.client_from_env && (
+              {st.mailboxes.filter((m) => m.connected).length > 1 && (
+                <Button variant="ghost" size="sm" icon="unplug" onClick={() => run(() => api('/gmail/disconnect', { method: 'POST', body: {} }))} disabled={busy}>
+                  Disconnect all
+                </Button>
+              )}
+              {st.connected && !st.client_from_env && (
               <Button
                 variant={confirmRemove ? 'primary' : 'ghost'}
                 size="sm"
@@ -189,7 +233,7 @@ export function GmailCard() {
               </Button>
               )}
             </div>
-            <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>Disconnecting also revokes MoneyMap&apos;s access at Google. Emails already fetched stay in the Inbox.</p>
+            <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>Disconnecting also revokes MoneyMap&apos;s access to that account at Google. Emails already fetched stay in the Inbox.</p>
           </>
         )}
       </div>

@@ -4,6 +4,22 @@ export interface AuthStatus {
   setup_required: boolean;
   authenticated: boolean;
   username: string | null;
+  display_name?: string | null;
+  is_admin?: boolean;
+  must_change_password?: boolean; // still on the temporary password the admin gave
+}
+
+/** Settings → Users (admins only). */
+export interface ManagedUser {
+  id: number;
+  username: string;
+  display_name: string | null;
+  is_admin: boolean;
+  disabled: boolean;
+  must_change_password: boolean;
+  locked: boolean;
+  created_at: string | null;
+  last_login_at: string | null;
 }
 
 // Credit cards and loans come later as their own features.

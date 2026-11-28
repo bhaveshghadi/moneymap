@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...config import get_settings
-from ...db import SessionLocal
+from ...db import SessionLocal, as_user, current_uid, user_dir
 from . import client as gclient
 from .models import GmailAttachment, GmailMailbox, GmailMessage, GmailRun
 
@@ -33,9 +33,7 @@ def consent_threshold() -> int:
 
 
 def attachments_dir() -> Path:
-    d = get_settings().data_dir / "gmail"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return user_dir("gmail")  # this person's attachments
 
 
 # ---------------------------------------------------------------- templates
@@ -412,7 +410,13 @@ def start_fetch(db: Session, run: GmailRun, consent: bool, ids: list[str] | None
     if RUN_INLINE:
         _fetch_worker(run.id)
     else:
-        threading.Thread(target=_fetch_worker, args=(run.id,), daemon=True, name=f"gmail-run-{run.id}").start()
+        uid = current_uid()
+
+        def work(run_id: int = run.id) -> None:
+            with as_user(uid):  # a new thread starts without the request's user
+                _fetch_worker(run_id)
+
+        threading.Thread(target=work, daemon=True, name=f"gmail-run-{uid}-{run.id}").start()
     return run
 
 

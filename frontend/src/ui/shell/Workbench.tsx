@@ -9,6 +9,7 @@ import type { AuthStatus } from '../lib/types';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ScrollTop } from './ScrollTop';
+import { ChoosePassword } from './ChoosePassword';
 
 /**
  * Persistent workbench chrome: providers + sidebar +
@@ -43,11 +44,16 @@ export function WorkbenchShell({ children, bare = false }: { children: ReactNode
     );
   }
 
+  if (status.must_change_password) {
+    // signed in with the temporary password the admin gave: choose your own first
+    return <ChoosePassword status={status} onDone={(s) => setStatus(s)} />;
+  }
+
   if (bare) {
     // the setup page: signed in, full screen, no sidebar / top bar
     return (
       <MaskProvider>
-        <ShellProvider username={status.username}>
+        <ShellProvider username={status.username} displayName={status.display_name ?? null} isAdmin={!!status.is_admin}>
           <TxnProvider>{children}</TxnProvider>
         </ShellProvider>
       </MaskProvider>
@@ -56,7 +62,7 @@ export function WorkbenchShell({ children, bare = false }: { children: ReactNode
 
   return (
     <MaskProvider>
-      <ShellProvider username={status.username}>
+      <ShellProvider username={status.username} displayName={status.display_name ?? null} isAdmin={!!status.is_admin}>
         <TxnProvider>
           <div className="app-enter">
             <div className="app">

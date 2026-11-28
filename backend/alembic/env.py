@@ -1,17 +1,25 @@
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from app import models  # noqa: F401  (registers tables on Base.metadata)
-from app.config import get_settings
 from app.db import Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Which database: given by app.core.migrate (one user's file), or MONEYMAP_ALEMBIC_URL for a manual run.
+# Every user's file is upgraded at start-up with `python -m app.cli migrate`.
+_url = config.attributes.get("url") or os.environ.get("MONEYMAP_ALEMBIC_URL")
+if not _url:
+    raise SystemExit(
+        "Each user has their own database: run `python -m app.cli migrate`, "
+        "or set MONEYMAP_ALEMBIC_URL=sqlite:///path/to/moneymap.db for one file."
+    )
+config.set_main_option("sqlalchemy.url", _url)
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+if config.config_file_name is not None and "url" not in config.attributes:
+    fileConfig(config.config_file_name)  # not when run inside the app: it would reset the app's logging
 
 target_metadata = Base.metadata
 

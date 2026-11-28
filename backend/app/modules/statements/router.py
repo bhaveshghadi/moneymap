@@ -13,10 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...config import get_settings
 from ...core.crypto import DecryptError, decrypt, encrypt
 from ...core.once import one_at_a_time
-from ...db import get_db
+from ...db import get_db, user_dir
 from ..accounts.models import OWN_TYPES, Account, AccountType
 from ..auth.models import Setting
 from ..auth.security import current_user
@@ -424,7 +423,7 @@ def _loan_found(source: dict | None) -> HTTPException:
 
 
 def uploads_dir() -> Path:
-    d = get_settings().data_dir / "uploads"
+    d = user_dir("uploads")
     d.mkdir(parents=True, exist_ok=True)
     return d
 

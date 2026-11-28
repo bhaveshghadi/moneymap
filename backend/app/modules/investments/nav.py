@@ -209,18 +209,20 @@ def start_daily_updates() -> threading.Event | None:
     """A background thread that checks every hour whether today's NAVs are due."""
     if not get_settings().nav_update:
         return None
-    from ...db import SessionLocal
+    from ...core.users import all_user_ids
+    from ...db import SessionLocal, as_user
 
     stop = threading.Event()
 
     def loop() -> None:
         while not stop.wait(60):  # first check a minute after start, then hourly
-            try:
-                with SessionLocal() as db:
-                    if db.scalar(select(Fund.account_id).limit(1)) is not None and due(db):
-                        update_navs(db)
-            except Exception:
-                log.exception("NAV update crashed")
+            for uid in all_user_ids():  # AMFI's file is downloaded once and cached for everyone
+                try:
+                    with as_user(uid), SessionLocal() as db:
+                        if db.scalar(select(Fund.account_id).limit(1)) is not None and due(db):
+                            update_navs(db)
+                except Exception:
+                    log.exception("NAV update crashed for user %s", uid)
             stop.wait(3600 - 60)
 
     threading.Thread(target=loop, name="nav-update", daemon=True).start()

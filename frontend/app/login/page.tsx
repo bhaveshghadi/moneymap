@@ -48,7 +48,7 @@ export default function LoginPage() {
         <h2>{setup ? 'Set up MoneyMap' : 'Welcome back'}</h2>
         <p className="lead">
           {setup
-            ? 'Create the login for MoneyMap. It is a single-user app — this is the only account.'
+            ? 'Create the admin login. You can add other people later in Settings → Users; each person sees only their own money.'
             : 'Sign in to your self-hosted expense tracker.'}
         </p>
         {error && <div className="form-error" role="alert">{error}</div>}
@@ -77,7 +77,7 @@ export default function LoginPage() {
           </div>
         )}
         <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !status} style={{ width: '100%', marginTop: 6 }}>
-          {busy ? 'Please wait…' : setup ? 'Create login' : 'Sign in'}
+          {busy ? 'Please wait…' : setup ? 'Create admin login' : 'Sign in'}
         </button>
         <div className="onb-note">
           <Icon name="shield-check" size={14} color="var(--mint-600)" />

@@ -4,17 +4,29 @@ import { api } from '../lib/api';
 
 interface ShellCtxValue {
   username: string | null;
+  displayName: string | null;
+  isAdmin: boolean;
   /** Bumped after any mutation; data hooks refetch when it changes. */
   version: number;
   bump: () => void;
 }
 
-const ShellCtx = createContext<ShellCtxValue>({ username: null, version: 0, bump: () => {} });
+const ShellCtx = createContext<ShellCtxValue>({ username: null, displayName: null, isAdmin: false, version: 0, bump: () => {} });
 
-export function ShellProvider({ username, children }: { username: string | null; children: ReactNode }) {
+export function ShellProvider({
+  username,
+  displayName = null,
+  isAdmin = false,
+  children,
+}: {
+  username: string | null;
+  displayName?: string | null;
+  isAdmin?: boolean;
+  children: ReactNode;
+}) {
   const [version, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
-  return <ShellCtx.Provider value={{ username, version, bump }}>{children}</ShellCtx.Provider>;
+  return <ShellCtx.Provider value={{ username, displayName, isAdmin, version, bump }}>{children}</ShellCtx.Provider>;
 }
 
 export function useShell(): ShellCtxValue {

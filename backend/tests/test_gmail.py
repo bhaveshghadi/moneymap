@@ -229,7 +229,7 @@ def test_connect_callback_and_paste_flow(client, connected, fake):
 
 
 def test_secrets_are_encrypted_at_rest(client, connected):
-    db = sqlite3.connect(get_settings().data_dir / "moneymap.db")
+    db = sqlite3.connect(get_settings().data_dir / "users" / "1" / "moneymap.db")
     raw = " ".join(str(v) for v in db.execute("SELECT * FROM gmail_account").fetchone())
     raw += " ".join(str(v) for v in db.execute("SELECT * FROM gmail_mailbox").fetchone())
     db.close()

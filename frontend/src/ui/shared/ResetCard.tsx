@@ -23,8 +23,8 @@ const MODES: Record<Mode, { title: string; button: string; deletes: string[]; ke
   everything: {
     title: 'Reset everything',
     button: 'Reset everything…',
-    deletes: ['Everything in “Reset data”', 'Your login and settings — you set up a new login afterwards'],
-    keeps: [],
+    deletes: ['Everything in “Reset data”', 'Your settings, Gmail connection and fetched emails — you start again from the setup page'],
+    keeps: ['Your login (other people on this server aren’t touched)'],
   },
 };
 
@@ -60,6 +60,10 @@ export function ResetCard() {
       const r = await api<ResetOut>('/reset', { method: 'POST', body: { mode, password, confirm: word, backup } });
       if (r.signed_out) {
         window.location.href = '/login';
+        return;
+      }
+      if (mode === 'everything') {
+        window.location.href = '/'; // the setup page again
         return;
       }
       setMode(null);

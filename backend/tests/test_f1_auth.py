@@ -11,13 +11,15 @@ def test_health(anon):
 
 def test_first_run_needs_setup(anon):
     s = anon.get("/api/auth/status").json()
-    assert s == {"setup_required": True, "authenticated": False, "username": None}
+    assert s == {"setup_required": True, "authenticated": False, "username": None, "display_name": None,
+                 "is_admin": False, "must_change_password": False}  # fmt: skip
 
 
 def test_setup_signs_in_and_only_runs_once(anon):
     r = anon.post("/api/auth/setup", json={"username": " me ", "password": "long-enough"})
     assert r.status_code == 200
-    assert anon.get("/api/auth/status").json() == {"setup_required": False, "authenticated": True, "username": "me"}
+    st = anon.get("/api/auth/status").json()
+    assert (st["setup_required"], st["authenticated"], st["username"], st["is_admin"]) == (False, True, "me", True)
     again = anon.post("/api/auth/setup", json={"username": "other", "password": "long-enough"})
     assert again.status_code == 409
 

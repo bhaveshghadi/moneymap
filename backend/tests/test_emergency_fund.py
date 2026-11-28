@@ -188,7 +188,7 @@ def essential_history_via_db(months: int):
 def test_migration_marks_existing_starter_categories():
     backend = Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory() as d:
-        env = {**os.environ, "MONEYMAP_DATA_DIR": d}
+        env = {**os.environ, "MONEYMAP_DATA_DIR": d, "MONEYMAP_ALEMBIC_URL": f"sqlite:///{Path(d) / 'moneymap.db'}"}
         run = lambda *a: subprocess.run([sys.executable, "-m", "alembic", *a], cwd=backend, env=env,  # noqa: E731
                                         capture_output=True, text=True)
         assert run("upgrade", "0008_f8_piggy_banks").returncode == 0

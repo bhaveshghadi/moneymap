@@ -7,11 +7,12 @@ import { SectionCard } from '../primitives/SectionCard';
 import { Icon } from '../primitives/Icon';
 import { ResetCard } from '../shared/ResetCard';
 import { GmailCard } from '../shared/GmailCard';
+import { UsersCard } from '../shared/UsersCard';
 import { useTheme, type ThemeChoice } from '../lib/theme';
 import { PageHelp } from '../shared/PageHelp';
 
 export function SettingsPage() {
-  const { username } = useShell();
+  const { username, displayName, isAdmin } = useShell();
   const health = useApi<{ status: string; version: string }>('/health');
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -46,12 +47,18 @@ export function SettingsPage() {
       <div className="page-head">
         <div>
           <h1>Settings <PageHelp id="settings" /></h1>
-          <p>Signed in as {username}.</p>
+          <p>Signed in as {displayName ? `${displayName} (${username})` : username}{isAdmin ? ' · admin' : ''}.</p>
         </div>
         <div className="actions">
           <Button variant="secondary" icon="log-out" onClick={logout}>Sign out</Button>
         </div>
       </div>
+
+      {isAdmin && (
+        <div style={{ marginBottom: 18 }}>
+          <UsersCard />
+        </div>
+      )}
 
       <div style={{ marginBottom: 18 }}>
         <GmailCard />
@@ -95,9 +102,14 @@ export function SettingsPage() {
           </SectionCard>
           <div className="note info">
             <Icon name="info" size={15} />
-            <span>
-              Forgot your password? Run <span className="t-mono">docker exec -it moneymap python -m app.cli reset-password {username ?? '<user>'}</span>
-            </span>
+            {isAdmin ? (
+              <span>
+                Someone forgot their password? Use <b>Reset password</b> under Users. If you forget yours, run{' '}
+                <span className="t-mono">docker exec -it moneymap python -m app.cli reset-password {username ?? '<user>'}</span>
+              </span>
+            ) : (
+              <span>Forgot your password? Ask your MoneyMap admin to reset it.</span>
+            )}
           </div>
         </div>
       </div>

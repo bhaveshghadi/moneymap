@@ -11,7 +11,8 @@ BACKEND = Path(__file__).resolve().parent.parent
 
 
 def _alembic(data_dir: str, *args: str) -> subprocess.CompletedProcess:
-    env = {**os.environ, "MONEYMAP_DATA_DIR": data_dir}
+    env = {**os.environ, "MONEYMAP_DATA_DIR": data_dir,
+           "MONEYMAP_ALEMBIC_URL": f"sqlite:///{Path(data_dir) / 'moneymap.db'}"}  # fmt: skip
     return subprocess.run(
         [sys.executable, "-m", "alembic", *args], cwd=BACKEND, env=env, capture_output=True, text=True
     )

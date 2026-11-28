@@ -32,7 +32,9 @@ def one_at_a_time(name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     def deco(fn: Callable[P, R]) -> Callable[P, R]:
         @functools.wraps(fn)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            with _lock(name):
+            from ..db import signed_in_uid
+
+            with _lock(f"{signed_in_uid()}:{name}"):  # per person: others don't wait
                 return fn(*args, **kwargs)
 
         return wrapper

@@ -129,6 +129,6 @@ class GmailAttachment(Base):
     mime_type: Mapped[str | None] = mapped_column(String(120))
     size: Mapped[int] = mapped_column(Integer, default=0)
     sha256: Mapped[str] = mapped_column(String(64), index=True)
-    path: Mapped[str] = mapped_column(String(500))  # relative to <data_dir>/gmail
+    path: Mapped[str] = mapped_column(String(500))  # relative to <data_dir>/users/<id>/gmail
 
     message: Mapped[GmailMessage] = relationship(back_populates="attachments")

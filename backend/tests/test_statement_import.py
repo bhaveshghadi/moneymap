@@ -384,7 +384,7 @@ def test_remembered_password_is_encrypted(client, icici):
     from app.config import get_settings
 
     client.post("/api/statements", json={"attachment_id": icici["att"], "password": PASSWORD, "remember_password": True})
-    db = sqlite3.connect(get_settings().data_dir / "moneymap.db")
+    db = sqlite3.connect(get_settings().data_dir / "users" / "1" / "moneymap.db")
     values = [v for (k, v) in db.execute("SELECT key, value FROM setting") if k.startswith("pdf_password:")]
     db.close()
     assert len(values) == 1 and PASSWORD not in values[0]

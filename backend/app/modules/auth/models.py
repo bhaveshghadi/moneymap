@@ -7,7 +7,8 @@ from ...db import Base
 
 
 class User(Base):
-    """The one login. Setup creates it; there is never a second one."""
+    """Before multi-user: the one login, kept in each data file. Unused now — logins are in
+    users.db (app/core/users.py); the table stays so old files still match the schema."""
 
     __tablename__ = "user"
     id: Mapped[int] = mapped_column(primary_key=True)

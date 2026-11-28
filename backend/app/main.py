@@ -5,8 +5,12 @@ from fastapi import FastAPI
 
 from . import models  # noqa: F401  (registers every table before the routers use them)
 from .config import APP_VERSION
+from .core.users import all_user_ids
+from .db import as_user
 from .modules.accounts.router import router as accounts_router
 from .modules.auth.router import router as auth_router
+from .modules.auth.security import SessionUserMiddleware
+from .modules.backup.router import router as backup_router
 from .modules.bills.router import router as bills_router
 from .modules.budgets.router import router as budgets_router
 from .modules.cards.emi import router as emi_router
@@ -29,13 +33,16 @@ from .modules.rules.router import router as rules_router
 from .modules.savings.router import router as savings_router
 from .modules.statements.router import router as statements_router
 from .modules.transactions.router import router as transactions_router
+from .modules.users.router import router as users_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  [%(name)s] %(message)s")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    recover_stuck_runs()  # a restart kills Gmail fetch threads; don't leave them "running"
+    for uid in all_user_ids():
+        with as_user(uid):
+            recover_stuck_runs()  # a restart kills Gmail fetch threads; don't leave them "running"
     stop = start_daily_updates()  # mutual fund prices from AMFI, once a day after 9 pm
     yield
     if stop is not None:
@@ -50,6 +57,9 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
     lifespan=lifespan,
 )
+
+# Every request runs as the signed-in person: their own database file (app/db.py).
+app.add_middleware(SessionUserMiddleware)
 
 # One line per feature. Every router except auth requires a signed-in user.
 for r in (
@@ -75,6 +85,8 @@ for r in (
     inbox_router,
     statements_router,
     reset_router,
+    users_router,
+    backup_router,
 ):
     app.include_router(r, prefix="/api")
 

@@ -1,7 +1,5 @@
 import os
 import shutil
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -15,30 +13,42 @@ BACKEND = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _migrate():
-    """Build the test database with the real migrations (not create_all)."""
-    subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=BACKEND, check=True, capture_output=True)
+def _cleanup():
     yield
-    from app.db import engine
+    from app.core.users import dispose_users_engine
+    from app.db import dispose_all
 
-    engine.dispose()
+    dispose_all()
+    dispose_users_engine()
     shutil.rmtree(_DATA, ignore_errors=True)
 
 
 def _wipe():
-    """Empty every table and the stored files, so each test starts from a fresh install."""
-    from app.db import Base, engine
+    """Every login gone and every person's tables emptied (the files and their schema are kept, so
+    the next setup is quick): each test starts from a fresh install."""
+    from sqlalchemy import delete
 
-    with engine.begin() as conn:
-        for table in reversed(Base.metadata.sorted_tables):
-            conn.execute(table.delete())
-    for sub in ("gmail", "backups"):
-        shutil.rmtree(_DATA / sub, ignore_errors=True)
+    from app.core.users import Login, users_session
+    from app.db import Base, engine_for, users_root
+
+    with users_session() as db:
+        db.execute(delete(Login))
+        db.commit()
+    root = users_root()
+    for folder in root.iterdir() if root.exists() else []:
+        if not folder.name.isdigit():
+            continue
+        if (folder / "moneymap.db").exists():
+            with engine_for(int(folder.name)).begin() as conn:
+                for table in reversed(Base.metadata.sorted_tables):
+                    conn.execute(table.delete())
+        for sub in ("gmail", "backups", "uploads"):
+            shutil.rmtree(folder / sub, ignore_errors=True)
 
 
 @pytest.fixture()
 def anon():
-    """Client on an empty database (no user yet)."""
+    """Client on an empty install (no login yet)."""
     from fastapi.testclient import TestClient
 
     from app.main import app
@@ -49,10 +59,15 @@ def anon():
 
 @pytest.fixture()
 def client(anon):
-    """Signed-in client on a fresh database."""
+    """Signed-in client on a fresh install. The test body also runs as this person, so it can use
+    SessionLocal() directly."""
+    from app.db import reset_uid, set_uid
+
     r = anon.post("/api/auth/setup", json={"username": "tester", "password": "test-password"})
     assert r.status_code == 200, r.text
-    return anon
+    token = set_uid(1)
+    yield anon
+    reset_uid(token)
 
 
 @pytest.fixture()

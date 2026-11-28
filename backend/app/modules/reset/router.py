@@ -3,10 +3,11 @@
 "data": deletes all money data (accounts, transactions, categories, tags, budgets …)
 but keeps the login, settings, the Gmail connection and the Inbox (emails turn
 "new" again); the starter categories are added again.
-"everything": factory reset — the login, Gmail connection (revoked at Google) and
-fetched emails go too, and the app shows first-run setup afterwards.
+"everything": this person's whole file — settings, Gmail connection (revoked at Google) and
+fetched emails go too, and the setup page shows again. The login stays (it's in users.db), and
+other people's data is never touched (each has their own file).
 
-A copy of the database is written to <data_dir>/backups first unless switched off.
+A copy of the database is written to users/<id>/backups first unless switched off.
 """
 
 import logging
@@ -20,10 +21,10 @@ from pydantic import BaseModel
 from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
 
-from ...config import get_settings
-from ...db import Base, get_db
-from ..auth.models import User
-from ..auth.security import clear_session, current_user, verify_password
+from ...core.users import Login
+from ...db import Base, get_db, user_dir
+from ..auth.security import current_user, verify_password
+from ..auth.service import prepare_user_data
 from ..categories.seed import seed_categories
 from ..gmail import client as gmail_client
 from ..gmail.fetch import attachments_dir
@@ -34,7 +35,6 @@ router = APIRouter(prefix="/reset", tags=["reset"])
 
 # Tables a data-only reset keeps.
 KEEP_ON_DATA_RESET = {
-    "user",
     "setting",
     "gmail_account",
     "gmail_mailbox",
@@ -54,14 +54,12 @@ class ResetIn(BaseModel):
 
 class ResetOut(BaseModel):
     mode: str
-    backup_file: str | None  # file name inside <data_dir>/backups
+    backup_file: str | None  # file name inside users/<id>/backups
     signed_out: bool
 
 
 def _backup(db: Session, mode: str) -> str:
-    folder = get_settings().data_dir / "backups"
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"moneymap-{datetime.now():%Y-%m-%d-%H%M%S}-before-reset-{mode}.db"
+    path = user_dir("backups") / f"moneymap-{datetime.now():%Y-%m-%d-%H%M%S}-before-reset-{mode}.db"
     raw = db.connection().connection.driver_connection  # the live sqlite3 connection
     dest = sqlite3.connect(path)
     try:
@@ -75,7 +73,7 @@ def _backup(db: Session, mode: str) -> str:
 def reset(
     body: ResetIn,
     response: Response,
-    user: User = Depends(current_user),
+    user: Login = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> ResetOut:
     if body.confirm.strip() != CONFIRM_WORD:
@@ -101,11 +99,9 @@ def reset(
         seed_categories(db)
     db.commit()
     # Uploaded statement PDFs belonged to the (now deleted) statement imports.
-    shutil.rmtree(get_settings().data_dir / "uploads", ignore_errors=True)
+    shutil.rmtree(user_dir("uploads"), ignore_errors=True)
     if body.mode == "everything":
         shutil.rmtree(attachments_dir(), ignore_errors=True)
-
-    if body.mode == "everything":
-        clear_session(response)
-    log.warning("reset (%s) done; backup=%s", body.mode, backup_file)
-    return ResetOut(mode=body.mode, backup_file=backup_file, signed_out=body.mode == "everything")
+        prepare_user_data(user.id)  # starter categories, and the setup page again
+    log.warning("reset (%s) for user %s done; backup=%s", body.mode, user.id, backup_file)
+    return ResetOut(mode=body.mode, backup_file=backup_file, signed_out=False)

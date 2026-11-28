@@ -5,7 +5,7 @@
 set -euo pipefail
 
 cd /app/backend
-python -m alembic upgrade head
+python -m app.cli migrate   # every person's database (moves single-user data the first time)
 
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log &
 API_PID=$!

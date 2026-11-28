@@ -19,7 +19,7 @@ class StatementImport(Base):
             "gmail_attachment.id", ondelete="SET NULL", name="fk_statement_import_attachment_id_gmail_attachment"
         )
     )
-    upload_path: Mapped[str | None] = mapped_column(String(255))  # uploaded PDF, relative to <data_dir>/uploads
+    upload_path: Mapped[str | None] = mapped_column(String(255))  # uploaded PDF, relative to users/<id>/uploads
     file_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
     filename: Mapped[str] = mapped_column(String(255))
     doc_type: Mapped[str] = mapped_column(String(32))  # bank_statement | card_statement

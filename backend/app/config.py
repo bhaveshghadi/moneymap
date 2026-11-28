@@ -12,7 +12,7 @@ APP_VERSION = "0.1.0"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MONEYMAP_")
 
-    # Everything persistent (SQLite DB, secret key, later uploads) lives here.
+    # Everything persistent lives here: users.db (logins), users/<id>/ (each person's data), secret_key, amfi/.
     # In Docker this is the named volume mounted at /data.
     data_dir: Path = Path(__file__).resolve().parent.parent / "data"
     # Signs session cookies. If unset, one is generated once and stored in
@@ -33,10 +33,6 @@ class Settings(BaseSettings):
     google_client_json: str | None = None
     google_client_id: str | None = None
     google_client_secret: str | None = None
-
-    @property
-    def database_url(self) -> str:
-        return f"sqlite:///{self.data_dir / 'moneymap.db'}"
 
     def resolved_secret_key(self) -> str:
         if self.secret_key:

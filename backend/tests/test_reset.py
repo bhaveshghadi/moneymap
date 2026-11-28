@@ -1,4 +1,4 @@
-"""Settings → Reset: data only, or everything (factory reset)."""
+"""Settings → Reset: data only, or everything (this person's whole file; the login stays)."""
 
 from app.config import get_settings
 from app.db import SessionLocal
@@ -33,7 +33,7 @@ def test_reset_data_keeps_login_and_settings(client, bank):
     _seed(client, bank)
     r = client.post("/api/reset", json={"mode": "data", "password": PW, "confirm": " RESET "}).json()
     assert r["signed_out"] is False and r["backup_file"].endswith("before-reset-data.db")
-    assert (get_settings().data_dir / "backups" / r["backup_file"]).stat().st_size > 0
+    assert (get_settings().data_dir / "users" / "1" / "backups" / r["backup_file"]).stat().st_size > 0
     assert client.get("/api/auth/status").json()["authenticated"] is True
     assert client.get("/api/accounts").json() == []
     assert client.get("/api/tags").json() == []
@@ -45,15 +45,14 @@ def test_reset_data_keeps_login_and_settings(client, bank):
         assert db.get(Setting, "theme").value == "dark"
 
 
-def test_reset_everything_is_factory_reset(client, bank):
+def test_reset_everything_empties_the_file_and_keeps_the_login(client, bank):
     _seed(client, bank)
     r = client.post("/api/reset", json={"mode": "everything", "password": PW, "confirm": "RESET", "backup": False})
-    assert r.status_code == 200 and r.json() == {"mode": "everything", "backup_file": None, "signed_out": True}
+    assert r.status_code == 200 and r.json() == {"mode": "everything", "backup_file": None, "signed_out": False}
     st = client.get("/api/auth/status").json()
-    assert st["setup_required"] is True and st["authenticated"] is False
+    assert st["setup_required"] is False and st["authenticated"] is True
     with SessionLocal() as db:
-        assert db.query(Setting).count() == 0
-    # first-run setup works again and adds the starter categories
-    assert client.post("/api/auth/setup", json={"username": "new", "password": "another-pass"}).status_code == 200
-    assert len(client.get("/api/categories").json()) == 53
+        assert db.get(Setting, "theme") is None  # settings went too
+        assert db.get(Setting, "setup.page").value == "pending"  # the setup page shows again
+    assert len(client.get("/api/categories").json()) == 53  # starter categories
     assert client.get("/api/accounts").json() == []

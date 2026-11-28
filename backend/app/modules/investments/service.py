@@ -40,6 +40,7 @@ KIND_LABEL = {
     "stocks": "Stocks & shares",
     "crypto": "Crypto",
     "property": "Property",
+    "bond": "Bonds",
     "other": "Other",
 }
 
@@ -188,6 +189,10 @@ def investment_out(
         stale=v.stale,
         no_price=v.no_price,
         next_due=dues[0] if dues else None,
+        platform=inv.platform,
+        rating=inv.rating,
+        repayment=(inv.repayment or "bullet") if inv.kind == "bond" else None,
+        face_value=inv.face_value,
         fund=_fund_out(inv),
         property=prop,
     )
@@ -235,9 +240,18 @@ def detail_out(db: Session, inv: Investment) -> InvestmentDetail:
         )
         for f in fts
     ]
+    bond = None
+    if inv.kind == "bond":
+        from .bond import bond_out
+
+        bond = bond_out(db, inv, valued(inv, txns, get_rates(db), date.today()), date.today())
     db.commit()  # a property's balance goal follows the balance
     return InvestmentDetail(
-        **out.model_dump(exclude={"fund"}), fund=out.fund, moves=[txn_out(t) for t in moves], fund_txns=fund_txns
+        **out.model_dump(exclude={"fund", "bond"}),
+        fund=out.fund,
+        bond=bond,
+        moves=[txn_out(t) for t in moves],
+        fund_txns=fund_txns,
     )
 
 

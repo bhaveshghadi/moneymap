@@ -651,7 +651,7 @@ export interface StatementOverlap {
 
 export type InvestmentKind =
   | 'mf' | 'fd' | 'rd' | 'post_office' | 'retirement' | 'insurance' | 'lent'
-  | 'chit' | 'gold' | 'stocks' | 'crypto' | 'property' | 'other';
+  | 'chit' | 'gold' | 'stocks' | 'crypto' | 'property' | 'bond' | 'other';
 export type Compounding = 'monthly' | 'quarterly' | 'half_yearly' | 'yearly' | 'payout' | 'simple';
 export type PremiumFrequency = 'monthly' | 'quarterly' | 'half_yearly' | 'yearly' | 'single';
 
@@ -660,7 +660,7 @@ export interface InvestmentDue {
   name: string;
   kind: InvestmentKind;
   date: string;
-  what: 'matures' | 'premium' | 'due_back' | 'instalment' | 'balance';
+  what: 'matures' | 'premium' | 'due_back' | 'instalment' | 'payout' | 'balance';
   amount: number;
   overdue: boolean;
 }
@@ -707,8 +707,46 @@ export interface Investment {
   stale: boolean;
   no_price: boolean;
   next_due: InvestmentDue | null;
+  platform: string | null; // bonds: Wint, GoldenPi …
+  rating: string | null;
+  repayment: 'bullet' | 'amortising' | null;
+  face_value: number | null; // paise, one unit
   fund: FundInfo | null; // mutual funds
   property: PropertyPurchase | null; // property bought in parts
+  bond: BondInfo | null; // bonds (detail only)
+}
+
+export interface BondRow {
+  n: number;
+  date: string;
+  interest: number;
+  principal: number;
+  outstanding: number;
+  payout_id: number | null;
+  status: 'received' | 'due' | 'missed';
+}
+
+export interface BondPayout {
+  id: number;
+  date: string;
+  n: number | null;
+  interest: number;
+  principal: number;
+  tds: number;
+  received: number;
+  interest_txn_id: number | null;
+  principal_txn_id: number | null;
+}
+
+export interface BondInfo {
+  face: number | null;
+  outstanding: number;
+  principal_back: number;
+  interest_received: number;
+  tds: number;
+  schedule: BondRow[];
+  payouts: BondPayout[];
+  unsplit: Txn[]; // money back from the bond not split into interest + principal yet
 }
 
 export interface FundInfo {

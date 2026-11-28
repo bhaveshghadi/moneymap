@@ -27,6 +27,7 @@ export const KIND_META: Record<InvestmentKind, { label: string; icon: string; co
   stocks: { label: 'Stocks & shares', icon: 'chart-candlestick', color: 'indigo', blurb: 'Shares, ETFs, ESOPs, RSUs, startup shares' },
   crypto: { label: 'Crypto', icon: 'bitcoin', color: 'amber', blurb: 'Coins — you enter the price' },
   property: { label: 'Property', icon: 'house', color: 'slate', blurb: 'Land, flat, shop — your estimate' },
+  bond: { label: 'Bond', icon: 'scroll-text', color: 'blue', blurb: 'NCDs and bonds from Wint, GoldenPi, Grip, RBI …' },
   other: { label: 'Other', icon: 'package', color: 'slate', blurb: 'Anything else you own' },
 };
 export const KIND_ORDER = Object.keys(KIND_META) as InvestmentKind[];
@@ -37,6 +38,7 @@ export const SUBTYPES: Partial<Record<InvestmentKind, [string, string][]>> = {
   insurance: [['endowment', 'Endowment / LIC'], ['money_back', 'Money-back'], ['ulip', 'ULIP'], ['term', 'Term insurance']],
   gold: [['jewellery', 'Jewellery'], ['coin', 'Coins / bars'], ['sgb', 'Sovereign Gold Bond'], ['digital', 'Digital gold'], ['silver', 'Silver']],
   stocks: [['stock', 'Shares'], ['etf', 'ETF'], ['esop', 'ESOP'], ['rsu', 'RSU'], ['startup', 'Startup shares']],
+  bond: [['ncd', 'Corporate bond / NCD'], ['govt', 'Government (G-Sec, SDL, T-bill)'], ['tax_free', 'Tax-free bond'], ['rbi_frb', 'RBI Floating Rate Bond'], ['securitised', 'Securitised debt']],
 };
 export const subtypeLabel = (kind: InvestmentKind, sub: string | null): string | null =>
   sub ? (SUBTYPES[kind]?.find(([v]) => v === sub)?.[1] ?? sub) : null;
@@ -61,7 +63,19 @@ export const DUE_LABEL: Record<InvestmentDue['what'], string> = {
   premium: 'Premium due',
   due_back: 'Due back',
   instalment: 'Chit instalment',
+  payout: 'Bond payout',
   balance: 'Payment due',
+};
+export const BOND_FREQUENCY_LABEL: Record<string, string> = {
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+  half_yearly: 'Half-yearly',
+  yearly: 'Yearly',
+  single: 'All at maturity',
+};
+export const REPAYMENT_LABEL: Record<string, string> = {
+  bullet: 'All at maturity (interest only until then)',
+  amortising: 'Part with every payout (principal + interest)',
 };
 const PO_COMPOUNDING: Record<string, string> = { nsc: 'yearly', kvp: 'yearly', td: 'quarterly', rd: 'quarterly', scss: 'payout', mis: 'payout' };
 
@@ -70,7 +84,7 @@ const isSchedule = (kind: InvestmentKind, sub: string) => kind === 'rd' || kind 
 type Key =
   | 'institution' | 'number' | 'person' | 'amount' | 'instalment' | 'rate' | 'compounding' | 'frequency' | 'start'
   | 'maturity' | 'months' | 'years' | 'sum_assured' | 'maturity_amount' | 'quantity' | 'purity' | 'unit_price'
-  | 'current_value' | 'value_date' | 'payout_on' | 'payout_amount';
+  | 'current_value' | 'value_date' | 'payout_on' | 'payout_amount' | 'platform' | 'rating' | 'face_value' | 'repayment';
 
 /** The fields each kind asks for, in order. */
 function fieldsFor(kind: InvestmentKind, sub: string, editing: boolean): Key[] {
@@ -109,6 +123,8 @@ function fieldsFor(kind: InvestmentKind, sub: string, editing: boolean): Key[] {
       return ['institution', 'quantity', 'amount', 'start', 'unit_price'];
     case 'property':
       return ['institution', 'amount', 'start', 'current_value'];
+    case 'bond':
+      return ['institution', 'number', 'platform', 'rating', 'quantity', 'face_value', 'amount', 'rate', 'frequency', 'repayment', 'start', 'maturity'];
     default:
       return ['institution', 'amount', 'start', 'current_value'];
   }
@@ -117,37 +133,51 @@ function fieldsFor(kind: InvestmentKind, sub: string, editing: boolean): Key[] {
 function labelFor(k: Key, kind: InvestmentKind, sub: string): string {
   const L: Record<Key, string> = {
     institution:
-      kind === 'insurance' ? 'Insurer' : kind === 'chit' ? 'Organiser' : kind === 'property' ? 'Place' : kind === 'stocks' || kind === 'crypto' ? 'Broker / exchange' : kind === 'gold' ? 'App / provider' : kind === 'other' ? 'Where' : 'Bank',
+      kind === 'bond' ? 'Issuer' : kind === 'insurance' ? 'Insurer' : kind === 'chit' ? 'Organiser' : kind === 'property' ? 'Place' : kind === 'stocks' || kind === 'crypto' ? 'Broker / exchange' : kind === 'gold' ? 'App / provider' : kind === 'other' ? 'Where' : 'Bank',
     number:
-      kind === 'mf' ? 'Folio number' : kind === 'insurance' ? 'Policy number' : sub === 'epf' ? 'UAN' : sub === 'nps' ? 'PRAN' : kind === 'retirement' || kind === 'post_office' ? 'Account / certificate no.' : kind === 'fd' ? 'FD number' : 'Account number',
+      kind === 'bond' ? 'ISIN' : kind === 'mf' ? 'Folio number' : kind === 'insurance' ? 'Policy number' : sub === 'epf' ? 'UAN' : sub === 'nps' ? 'PRAN' : kind === 'retirement' || kind === 'post_office' ? 'Account / certificate no.' : kind === 'fd' ? 'FD number' : 'Account number',
     person: 'Lent to',
     amount:
-      kind === 'lent' ? 'Amount lent (₹)' : kind === 'mf' ? 'Put in (₹)' : kind === 'retirement' ? 'Put in so far (₹)' : kind === 'property' ? 'Paid so far (₹)' : ['gold', 'stocks', 'crypto'].includes(kind) ? 'Bought for (₹)' : 'Amount (₹)',
+      kind === 'bond' ? 'Amount paid (₹)' : kind === 'lent' ? 'Amount lent (₹)' : kind === 'mf' ? 'Put in (₹)' : kind === 'retirement' ? 'Put in so far (₹)' : kind === 'property' ? 'Paid so far (₹)' : ['gold', 'stocks', 'crypto'].includes(kind) ? 'Bought for (₹)' : 'Amount (₹)',
     instalment: kind === 'insurance' ? 'Premium (₹)' : 'Every month (₹)',
-    rate: kind === 'lent' ? 'Interest % a year' : 'Interest rate (% a year)',
+    rate: kind === 'lent' ? 'Interest % a year' : kind === 'bond' ? 'Coupon rate (% a year)' : 'Interest rate (% a year)',
     compounding: 'Interest added',
-    frequency: 'Premium paid',
-    start: kind === 'mf' ? 'Invested since' : kind === 'lent' ? 'Lent on' : kind === 'insurance' ? 'Policy start / first premium' : ['gold', 'stocks', 'crypto', 'property'].includes(kind) ? 'Bought on' : 'Start date',
+    frequency: kind === 'bond' ? 'Pays interest' : 'Premium paid',
+    start: kind === 'bond' ? 'Bought on' : kind === 'mf' ? 'Invested since' : kind === 'lent' ? 'Lent on' : kind === 'insurance' ? 'Policy start / first premium' : ['gold', 'stocks', 'crypto', 'property'].includes(kind) ? 'Bought on' : 'Start date',
     maturity: kind === 'lent' ? 'Due back on' : 'Maturity date',
     months: 'Months',
     years: 'Premium-paying years',
     sum_assured: 'Sum assured (₹)',
     maturity_amount: 'Maturity amount (₹)',
-    quantity: kind === 'mf' ? 'Units' : kind === 'gold' ? (sub === 'sgb' ? 'Units (1 unit = 1 gram)' : 'Grams') : kind === 'crypto' ? 'Coins' : 'Quantity (shares / units)',
+    quantity: kind === 'mf' || kind === 'bond' ? 'Units' : kind === 'gold' ? (sub === 'sgb' ? 'Units (1 unit = 1 gram)' : 'Grams') : kind === 'crypto' ? 'Coins' : 'Quantity (shares / units)',
     purity: 'Purity',
     unit_price: kind === 'crypto' ? 'Price of one coin today (₹)' : 'Price of one share today (₹)',
     current_value: kind === 'retirement' ? 'Balance (₹)' : kind === 'insurance' ? 'Surrender value today (₹)' : 'Value today (₹)',
     value_date: 'Balance as of',
     payout_on: 'Payout taken on',
     payout_amount: 'Payout received (₹)',
+    platform: 'Bought through (app / broker)',
+    rating: 'Credit rating',
+    face_value: 'Face value of one unit (₹) — if you know it',
+    repayment: 'Principal comes back',
   };
   return L[k];
 }
 
-const OPTIONAL: Key[] = ['institution', 'number', 'maturity_amount', 'sum_assured', 'current_value', 'unit_price', 'value_date', 'payout_on', 'payout_amount'];
-const MONEY: Key[] = ['amount', 'instalment', 'sum_assured', 'maturity_amount', 'unit_price', 'current_value', 'payout_amount'];
+const OPTIONAL: Key[] = ['platform', 'rating', 'face_value', 'institution', 'number', 'maturity_amount', 'sum_assured', 'current_value', 'unit_price', 'value_date', 'payout_on', 'payout_amount'];
+const MONEY: Key[] = ['face_value', 'amount', 'instalment', 'sum_assured', 'maturity_amount', 'unit_price', 'current_value', 'payout_amount'];
 
 type Values = Record<Key, string>;
+
+const BOND_PLACEHOLDER: Partial<Record<Key, string>> = {
+  institution: 'e.g. the NBFC / company',
+  number: 'e.g. INE…',
+  platform: 'e.g. Wint',
+  rating: 'e.g. A+ (CRISIL)',
+  face_value: 'blank = amount paid ÷ units',
+  rate: 'e.g. 10.5',
+  amount: 'incl. any accrued interest you paid',
+};
 
 function initial(inv?: Investment): Values {
   const m = (v: number | null | undefined) => (v != null ? paiseToInput(v) : '');
@@ -173,6 +203,10 @@ function initial(inv?: Investment): Values {
     value_date: inv?.value_date ?? '',
     payout_on: inv?.payout_on ?? '',
     payout_amount: m(inv?.payout_amount),
+    platform: inv?.platform ?? '',
+    rating: inv?.rating ?? '',
+    face_value: m(inv?.face_value),
+    repayment: inv?.repayment ?? 'bullet',
   };
 }
 
@@ -223,7 +257,7 @@ function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onIm
     setKind(k);
     const first = SUBTYPES[k]?.[0]?.[0] ?? '';
     setSub(first);
-    setV((p) => ({ ...p, compounding: k === 'lent' ? 'simple' : 'quarterly' }));
+    setV((p) => ({ ...p, compounding: k === 'lent' ? 'simple' : 'quarterly', frequency: k === 'bond' ? 'monthly' : p.frequency }));
   };
 
   if (!kind) {
@@ -374,7 +408,17 @@ function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onIm
         <div className="field" key={k}>
           {label}
           <select id={id} className="inp" value={v.frequency} onChange={(e) => set('frequency', e.target.value)}>
-            {Object.entries(FREQUENCY_LABEL).map(([o, l]) => <option key={o} value={o}>{l}</option>)}
+            {Object.entries(kind === 'bond' ? BOND_FREQUENCY_LABEL : FREQUENCY_LABEL).map(([o, l]) => <option key={o} value={o}>{l}</option>)}
+          </select>
+        </div>
+      );
+    }
+    if (k === 'repayment') {
+      return (
+        <div className="field" key={k}>
+          {label}
+          <select id={id} className="inp" value={v.repayment} onChange={(e) => set('repayment', e.target.value)}>
+            {Object.entries(REPAYMENT_LABEL).map(([o, l]) => <option key={o} value={o}>{l}</option>)}
           </select>
         </div>
       );
@@ -391,6 +435,7 @@ function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onIm
     }
     const isDate = ['start', 'maturity', 'value_date', 'payout_on'].includes(k);
     const numeric = MONEY.includes(k) || ['rate', 'quantity', 'months', 'years'].includes(k);
+    const hint = kind === 'bond' ? BOND_PLACEHOLDER[k] : undefined;
     return (
       <div className="field" key={k}>
         {label}
@@ -402,7 +447,7 @@ function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onIm
           value={v[k]}
           onChange={(e) => set(k, e.target.value)}
           required={!opt && !['amount', 'current_value'].includes(k) && !(kind === 'retirement') && !(isDate && ['mf', 'gold', 'stocks', 'crypto', 'property', 'other'].includes(kind))}
-          placeholder={MONEY.includes(k) ? '0.00' : k === 'rate' ? 'e.g. 7.1' : undefined}
+          placeholder={hint ?? (MONEY.includes(k) ? '0.00' : k === 'rate' ? 'e.g. 7.1' : undefined)}
         />
       </div>
     );
@@ -440,6 +485,12 @@ function Body({ investment, onImportCas }: { investment?: InvestmentDetail; onIm
             <select id="inv-sub" className="inp" value={sub} onChange={(e) => setSub(e.target.value)}>
               {subs.map(([o, l]) => <option key={o} value={o}>{l}</option>)}
             </select>
+          </div>
+        )}
+        {kind === 'bond' && !editing && (
+          <div className="note info" style={{ marginBottom: 14 }}>
+            From your app&apos;s order or holdings page: the units, the amount you paid, the coupon rate (not the
+            yield / XIRR) and the maturity date. Face value can stay blank — MoneyMap uses amount paid ÷ units.
           </div>
         )}
         {kind === 'insurance' && sub === 'term' && (

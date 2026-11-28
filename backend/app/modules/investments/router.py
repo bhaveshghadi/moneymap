@@ -24,6 +24,7 @@ from .schemas import (
     LinkIn,
     LinkOut,
     MoveIn,
+    PayoutIn,
     PropertyIn,
     RatesIO,
 )
@@ -50,6 +51,7 @@ SUBTYPES = {
     "insurance": {"endowment", "money_back", "ulip", "term"},
     "gold": {"jewellery", "coin", "sgb", "digital", "silver"},
     "stocks": {"stock", "etf", "esop", "rsu", "startup"},
+    "bond": {"ncd", "govt", "tax_free", "rbi_frb", "securitised"},
 }
 SUBTYPE_LABEL = {
     "nsc": "NSC",
@@ -75,6 +77,11 @@ SUBTYPE_LABEL = {
     "esop": "ESOPs",
     "rsu": "RSUs",
     "startup": "Startup shares",
+    "ncd": "Bond",
+    "govt": "Govt bond",
+    "tax_free": "Tax-free bond",
+    "rbi_frb": "RBI Floating Rate Bond",
+    "securitised": "Securitised debt",
 }
 PURITIES = {"24k", "22k", "18k", "14k", "999", "925"}
 
@@ -109,6 +116,18 @@ def _check(inv: Investment, amount: int | None, creating: bool) -> None:
         return
     if k in ("fd", "post_office") and (inv.rate_bp is None or not inv.start_date or not inv.maturity_date):
         raise bad("Enter the interest rate, the start date and the maturity date.")
+    if k == "bond":
+        if not inv.quantity:
+            raise bad("Enter the units.")
+        if not inv.face_value:
+            raise bad("Enter the amount paid or the face value of one unit.")
+        if inv.rate_bp is None or not inv.start_date or not inv.maturity_date:
+            raise bad("Enter the coupon rate, the purchase date and the maturity date.")
+        if inv.frequency not in ("monthly", "quarterly", "half_yearly", "yearly", "single"):
+            raise bad("Choose how often it pays.")
+        if creating and not amount:
+            raise bad("Enter the amount you paid.")
+        return
     if k == "lent" and not (inv.person and inv.start_date):
         raise bad("Enter who you lent to and when.")
     if k == "mf" and creating and not inv.quantity:
@@ -156,6 +175,10 @@ def _apply(inv: Investment, data: dict) -> None:
         "pay_from_id",
         "notes",
         "closed_on",
+        "platform",
+        "rating",
+        "repayment",
+        "face_value",
     ):
         if f in data:
             v = data[f]
@@ -206,6 +229,8 @@ def create_investment(body: InvestmentIn, db: Session = Depends(get_db)) -> Inve
         inv.purity = "999" if inv.subtype == "silver" else "24k" if inv.subtype in ("sgb", "digital", "coin") else "22k"
     schedule = is_schedule(inv)
     amount = None if schedule else body.amount
+    if inv.kind == "bond" and not inv.face_value and amount and inv.quantity:
+        inv.face_value = round(amount * 1000 / inv.quantity)  # not known: the price paid for one unit
     _check(inv, amount, creating=True)
     pay_from = bank_account(db, body.pay_from_id, "the money came from") if body.pay_from_id else None
     if body.money == "bank" and amount and pay_from is None:
@@ -310,6 +335,32 @@ def add_move(account_id: int, body: MoveIn, db: Session = Depends(get_db)) -> In
     move(db, inv, body.direction, body.amount, body.date, bank, (body.description or "").strip() or None)
     if inv.kind == "chit" and body.direction == "out" and not inv.payout_on:
         inv.payout_on, inv.payout_amount = body.date, body.amount  # the chit payout
+    db.commit()
+    db.refresh(inv)
+    return detail_out(db, inv)
+
+
+@router.post("/{account_id}/payouts", response_model=InvestmentDetail)
+def add_payout(account_id: int, body: PayoutIn, db: Session = Depends(get_db)) -> InvestmentDetail:
+    """A bond payout: interest (income) and principal back (a transfer), new or split from a bank credit."""
+    from .bond import record_payout
+
+    inv = _get(db, account_id)
+    if inv.kind != "bond":
+        raise bad("Payouts are for bonds.")
+    bank = bank_account(db, body.bank_id, "the money went to")
+    record_payout(db, inv, body, bank)
+    db.commit()
+    db.refresh(inv)
+    return detail_out(db, inv)
+
+
+@router.delete("/{account_id}/payouts/{payout_id}", response_model=InvestmentDetail)
+def remove_payout(account_id: int, payout_id: int, db: Session = Depends(get_db)) -> InvestmentDetail:
+    from .bond import delete_payout
+
+    inv = _get(db, account_id)
+    delete_payout(db, inv, payout_id)
     db.commit()
     db.refresh(inv)
     return detail_out(db, inv)

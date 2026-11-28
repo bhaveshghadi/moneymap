@@ -20,6 +20,7 @@ KIND_WORDS = {
     "fd": r"\bfd\b|fixed dep|term dep|\btd\b",
     "stocks": r"zerodha|groww|upstox|angel|\bicici ?sec|demat|broking|securities",
     "crypto": r"wazirx|coindcx|coinswitch|binance|crypto",
+    "bond": r"\bncds?\b|\bbonds?\b|\bwint\b|wint ?wealth|goldenpi|grip ?invest|indiabonds|\bcoupon|jiraaf|altifi",
 }
 # words that say money came back
 BACK_WORDS = (
@@ -73,11 +74,14 @@ def score(inv: Investment, text: str, amount: int) -> Hit | None:
         return None  # money lent: only the person's name says who it is
     target = inv.instalment
     amount_match = bool(target and abs(abs(amount) - target) <= ROUNDING)
-    if amount < 0 and not (re.search(BACK_WORDS, low) or inv.kind == "lent"):
+    if amount < 0 and not (
+        re.search(BACK_WORDS, low) or inv.kind == "lent" or (inv.kind == "bond" and (name or by_kind))
+    ):
         return None  # money in from an investment says what it is (redemption, maturity …)
     strong = by_number or bool(name)
     # a bank's or company's name alone (HDFC, LIC …) is too common: it needs a kind word or the amount too
-    named = bool(name) and (inv.kind == "lent" or by_kind or amount_match)
+    # (a bond's issuer is specific enough)
+    named = bool(name) and (inv.kind in ("lent", "bond") or by_kind or amount_match)
     if not (by_number or named or (by_kind and amount_match)):
         return None
     why = (

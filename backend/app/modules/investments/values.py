@@ -7,6 +7,7 @@
 - Entered kinds (PPF / EPF / NPS / Sukanya, property, other): the value you entered.
 - Priced kinds (stocks, crypto): quantity x the price you last entered.
 - Gold & silver: grams x the rate you last entered, by purity.
+- Bonds: the principal still to come back (face value less principal repaid); interest is income.
 """
 
 from dataclasses import dataclass, field
@@ -186,6 +187,82 @@ def _schedule(inv, today: date, v: Valued) -> None:
         v.dues.append(Due(mature, "matures", v.maturity_value))
 
 
+@dataclass
+class BondRow:
+    n: int
+    date: date
+    interest: int  # paise, before TDS
+    principal: int
+    outstanding: int  # principal left after this payout
+
+
+def bond_face(inv) -> int | None:
+    """Face value of the whole holding (units x face value of one), paise."""
+    if inv.face_value and inv.quantity:
+        return round(inv.quantity * inv.face_value / 1000)
+    return None
+
+
+def bond_schedule(inv) -> list[BondRow]:
+    """The payouts a bond is expected to make. Payout dates count back from maturity by the
+    frequency (the first period may be short). Interest-only ("bullet") bonds pay interest on the
+    outstanding for the days in each period and the principal at maturity; amortising bonds pay
+    an equal amount each time, interest first, the rest returning principal."""
+    face = bond_face(inv)
+    start, mature = inv.start_date, inv.maturity_date
+    if not (face and start and mature and mature > start and inv.rate_bp is not None):
+        return []
+    freq = inv.frequency or "monthly"
+    if freq == "single":
+        days = (mature - start).days
+        return [BondRow(1, mature, round(face * inv.rate_bp / 10_000 * days / 365), face, 0)]
+    step = STEP_MONTHS.get(freq, 1)
+    dates: list[date] = []
+    k = 0
+    while (d := add_months(mature, -k * step)) > start:
+        dates.append(d)
+        k += 1
+        if k > 1200:
+            break
+    dates.reverse()
+    rate = inv.rate_bp / 10_000
+    rows: list[BondRow] = []
+    left = face
+    prev = start
+    if inv.repayment == "amortising":
+        r = rate / PERIODS.get(freq, 12)
+        n = len(dates)
+        pay = face / n if r == 0 else face * r / (1 - (1 + r) ** -n)
+        for i, d in enumerate(dates, 1):
+            interest = round(left * r)
+            principal = left if i == n else max(0, min(left, round(pay) - interest))
+            left -= principal
+            rows.append(BondRow(i, d, interest, principal, left))
+        return rows
+    for i, d in enumerate(dates, 1):
+        interest = round(face * rate * (d - prev).days / 365)
+        principal = face if i == len(dates) else 0
+        left -= principal
+        rows.append(BondRow(i, d, interest, principal, left))
+        prev = d
+    return rows
+
+
+def _bond(inv, today: date, v: Valued) -> None:
+    face = bond_face(inv)
+    if face is None:
+        v.value = max(0, v.invested)
+    else:
+        v.value = max(0, face - v.money_out)  # principal still to come back
+    v.value_date = today
+    if inv.maturity_date:
+        v.maturity_value = v.value
+        v.dues.append(Due(inv.maturity_date, "matures", v.value))
+    nxt = next((r for r in bond_schedule(inv) if r.date >= today and r.date != inv.maturity_date), None)
+    if nxt:
+        v.dues.append(Due(nxt.date, "payout", nxt.interest + nxt.principal))
+
+
 def _stale(d: date | None, today: date) -> bool:
     return d is not None and (today - d).days > STALE_DAYS
 
@@ -200,6 +277,8 @@ def value_of(inv, entries: list[tuple[date, int]], today: date, rates: Rates) ->
         _ledger(inv, entries, today, v)
     elif is_schedule(inv):
         _schedule(inv, today, v)
+    elif inv.kind == "bond":
+        _bond(inv, today, v)
     elif inv.kind == "mf":
         f = getattr(inv, "fund", None)
         if f is not None and f.nav is not None:

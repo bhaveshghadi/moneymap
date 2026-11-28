@@ -26,6 +26,7 @@ KINDS = (
     "stocks",  # subtype: stock | etf | esop | rsu | startup
     "crypto",
     "property",
+    "bond",  # subtype: ncd | govt | tax_free | rbi_frb | securitised (details below + bond_payout)
     "other",
 )
 
@@ -63,6 +64,11 @@ class Investment(Base):
     )  # the bank account money usually comes from
     closed_on: Mapped[date | None] = mapped_column(Date)
     notes: Mapped[str | None] = mapped_column(Text)
+    # bonds: where bought, the rating, how the principal comes back, face value of one unit
+    platform: Mapped[str | None] = mapped_column(String(60))  # Wint, GoldenPi, Grip, a broker …
+    rating: Mapped[str | None] = mapped_column(String(40))  # "AA- (CRISIL)"
+    repayment: Mapped[str | None] = mapped_column(String(12))  # bullet | amortising
+    face_value: Mapped[int | None] = mapped_column(Integer)  # paise, one unit
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     account: Mapped[Account] = relationship(foreign_keys=[account_id], lazy="joined")
@@ -165,6 +171,29 @@ class Fund(Base):
     nav_source: Mapped[str | None] = mapped_column(String(8))  # cas | amfi | hand
     cost: Mapped[int | None] = mapped_column(Integer)  # paise, "Total Cost Value" from the CAS
     amfi_code: Mapped[str | None] = mapped_column(String(12))
+
+
+class BondPayout(Base):
+    """Money a bond paid you, split: interest (income, net of TDS) and principal back (a transfer
+    bond -> bank). `n` is the schedule row it is for, when known."""
+
+    __tablename__ = "bond_payout"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("account.id", ondelete="CASCADE", name="fk_bond_payout_account_id_account"), index=True
+    )
+    date: Mapped[date] = mapped_column(Date)
+    n: Mapped[int | None] = mapped_column(Integer)
+    interest: Mapped[int] = mapped_column(Integer, default=0)  # paise, before TDS
+    principal: Mapped[int] = mapped_column(Integer, default=0)
+    tds: Mapped[int] = mapped_column(Integer, default=0)
+    interest_txn_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transaction.id", ondelete="SET NULL", name="fk_bond_payout_interest_txn_id_transaction")
+    )
+    principal_txn_id: Mapped[int | None] = mapped_column(
+        ForeignKey("transaction.id", ondelete="SET NULL", name="fk_bond_payout_principal_txn_id_transaction")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class FundTxn(Base):
